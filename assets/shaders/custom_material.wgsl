@@ -1,111 +1,89 @@
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
 #import bevy_pbr::forward_io::VertexOutput
 
-const MAX_STEPS: u32 = 100;
-const MAX_DISTANCE: f32 = 1000;
-const EPSILON: f32 = 0.1;
+const MAX_STEPS: i32 = 256;
+const HIT_THRESHOLD: f32 = 0.001;
+const MAX_DISTANCE: f32 = 1000.0;
 
-const MODEL_COLOR: vec3<f32> = vec3(0.9, 0.1, 0.1);
-
-// Hemi lighting
-const SKY_COLOR: vec3<f32> = vec3(0.0, 0.3, 0.6);
-const GROUND_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.2);
-
-// Diffuse lighting
-const LIGHT_DIR: vec3<f32> = vec3(0.0, 1.0, 1.0);
-const LIGHT_COLOR: vec3<f32> = vec3(1.0, 1.0, 0.9);
-
-// PHONG specular
-const SPECULAR_INTENSITY: f32 = 32.0;
-
-struct SimpleMaterial {
-    color: vec4<f32>
-};
+const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
+const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
+const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 
 @group(2) @binding(0)
-var<uniform> material: SimpleMaterial;
+var<uniform> aspect_ratio: vec2<f32>;
+@group(2) @binding(1)
+var<uniform> camera_rotation: mat3x3<f32>;
 
-// SDF of a sphere of radius 0.5 centered at the origin
-fn sdSphere(p: vec3<f32>) -> f32 {
-    return length(p) - 100;
+fn sdSphere(p: vec3<f32>, r: f32) -> SdfResult {
+    let d = length(p) - r;
+    return SdfResult(d, BLUE);
 }
 
-fn sdBox(p: vec3<f32>, b: vec3<f32> ) -> f32 {
+fn sdBox(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
   let q = abs(p) - b;
-  return length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)),0.0);
+  let d = length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)), 0.0);
+  return SdfResult(d, color);
 }
 
-fn sceneSdf(p: vec3<f32>) -> f32 {
-    return sdBox(p, vec3<f32>(50.0));
+fn sdGround(p: vec3<f32>) -> SdfResult {
+  return SdfResult(-p.y, WHITE);
 }
 
-/// Use the gradient to estimate t surface normal of a point p on the 
-/// surface
-fn estimateNormal(p: vec3<f32>) -> vec3<f32> {
-    let dx = sceneSdf(p + vec3<f32>( EPSILON, 0.0, 0.0)) - sceneSdf(p - vec3<f32>( EPSILON, 0.0, 0.0));
-    let dy = sceneSdf(p + vec3<f32>(0.0,  EPSILON, 0.0)) - sceneSdf(p - vec3<f32>(0.0,  EPSILON, 0.0));
-    let dz = sceneSdf(p + vec3<f32>(0.0, 0.0,  EPSILON)) - sceneSdf(p - vec3<f32>(0.0, 0.0,  EPSILON));
-    return normalize(vec3<f32>(dx, dy, dz));
+struct SdfResult {
+    dist: f32,
+    color: vec3<f32>,
 }
 
-@fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    let origin = vec3<f32>(in.world_position.xy, 1.0);
+fn map(p: vec3<f32>) -> SdfResult {
+    var sdf =  sdBox(p - vec3<f32>(-2.0, 0, 0.0), vec3<f32>(1.0), BLUE);
+    sdf =  min_sdf(sdf, sdBox(p - vec3<f32>(2.0, 0, 0.0), vec3<f32>(1.0), RED));
+    sdf =  min_sdf(sdf, sdGround(p - vec3<f32>(0.0, 2.0, 0.0)));
 
-    // Move -Z
-    let dir = vec3<f32>(0.0, 0.0, -1.0);
+    return sdf;
+}
 
-    // Accumulated ray distance
-    var t: f32 = 0.0;
+fn min_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
+    if (s1.dist < s2.dist) {
+        return s1;
+    };
 
-    var color: vec3<f32> = vec3<f32>(0.0);
+    return s2;
+}
 
-    for (var i: u32 = 0u; i < MAX_STEPS; i = i + 1u) {
-        // evaluate a point along the ray
-        let p = origin + dir * t;
+fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
+    var dist = 0.0;
 
-        // calculate min distance to a surface using SDF
-        let d = sceneSdf(p);
+    for (var i = 0; i < MAX_STEPS; i++) {
+        var pos = cameraOrigin + dist * cameraDir;
+        pos = camera_rotation * pos;
 
-        // If we're within some threshold of a surface render it
-        if (d < 0.001) {
-            let normal = estimateNormal(p);
+        let result = map(pos);
 
-            // Ambient Light
-            let ambient = vec3(0.5);
-
-            // Hemi lighting
-            let hemiMix = remap(normal.z, -1.0, 1.0, 0.0, 1.0);
-            let hemi = mix(GROUND_COLOR, SKY_COLOR, hemiMix);
-
-            // Diffuse lighting
-            let lightDir = normalize(LIGHT_DIR);
-            let dp = max(dot(lightDir, normal), 0.0);
-            let diffuse = dp * LIGHT_COLOR;
-
-            // Phong specular
-            let r = reflect(-lightDir, normal);
-            let phongValue = max(dot(dir, r), 0.0);
-            let specular = pow(phongValue, SPECULAR_INTENSITY);
-
-
-            let lighting = ambient * 0.1 + hemi * 0.1 + diffuse * 1.0 + specular * 0.0;
-
-            let color = lighting * MODEL_COLOR;
-
-            return vec4<f32>(toSRGB(color), 0.0); 
+        // Hit something
+        if(result.dist < HIT_THRESHOLD) {
+            return result.color;
         }
 
-        // We can always move at least d away for the next iter (sphere tracing)
-        t = t + d;
+        dist = dist + result.dist;
 
-        // If we get too far away we give up
-        if (t > MAX_DISTANCE) {
+        if(result.dist > MAX_DISTANCE) {
             break;
         }
     }
 
-    return vec4<f32>(toSRGB(color), 1.0);
+    // Outside max steps and didn't hit anything
+    return vec3<f32>(0.0);
+}
+
+@fragment
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    let pixel_coords = (in.uv - 0.5) * aspect_ratio;
+    let ray_dir = normalize(vec3<f32>(pixel_coords * 2 / aspect_ratio.y, 1.0));
+    let ray_origin = vec3(0.0, 0.0, -5.0);
+
+    let color = ray_march(ray_origin, ray_dir);
+
+    return vec4<f32>(color, 1.0);
 }
 
 fn remap(x: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) -> f32 {
