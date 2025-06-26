@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use bevy::input::mouse::MouseMotion;
+use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::log::LogPlugin;
 use bevy::math::prelude::Plane3d;
 use bevy::prelude::*;
@@ -12,6 +12,8 @@ pub struct CustomMaterial {
     aspect_ratio: Vec2,
     #[uniform(1)]
     camera_rotation: Mat3,
+    #[uniform(2)]
+    camera_zoom: f32,
 }
 
 impl Material for CustomMaterial {
@@ -33,7 +35,15 @@ fn main() {
             MaterialPlugin::<CustomMaterial>::default(),
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, (orbit_camera_input, update_material_rotation))
+        .add_systems(
+            Update,
+            (
+                orbit_camera_input,
+                zoom_camera_input,
+                update_material_rotation,
+                update_material_zoom,
+            ),
+        )
         .run();
 }
 
@@ -41,6 +51,11 @@ fn main() {
 struct OrbitCamera {
     azimuth: f32,
     elevation: f32,
+}
+
+#[derive(Component, Debug)]
+struct ZoomCamera {
+    zoom: f32,
 }
 
 fn setup(
@@ -51,7 +66,8 @@ fn setup(
 ) {
     let material_handle = materials.add(CustomMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
-        camera_rotation: Mat3::from_rotation_x(PI / 10.0),
+        camera_rotation: Mat3::from_rotation_x(0.0),
+        camera_zoom: -5.0
     });
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
@@ -76,6 +92,7 @@ fn setup(
             azimuth: 0.0,
             elevation: 0.0,
         },
+        ZoomCamera { zoom: -5.0 },
     ));
 }
 
@@ -90,12 +107,21 @@ fn update_material_rotation(
     }
 }
 
+fn update_material_zoom(query: Query<&ZoomCamera>, mut materials: ResMut<Assets<CustomMaterial>>) {
+    let zoom = query.single().expect("Material zoom");
+
+    for mat in materials.iter_mut() {
+        mat.1.camera_zoom = zoom.zoom;
+    }
+}
+
 fn orbit_camera_input(
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut motion_evr: EventReader<MouseMotion>,
     mut query: Query<&mut OrbitCamera>,
 ) {
-    if !buttons.pressed(MouseButton::Left) {
+    if !is_orbit_button_pressed(&buttons, &keys) {
         return;
     }
 
@@ -112,6 +138,27 @@ fn orbit_camera_input(
             std::f32::consts::FRAC_PI_2 - 0.01,
         );
     }
+}
+
+fn zoom_camera_input(mut motion_evr: EventReader<MouseWheel>, mut query: Query<&mut ZoomCamera>) {
+    let mut delta = 0.0;
+    for ev in motion_evr.read() {
+        delta += ev.y;
+    }
+
+    for mut zoom in query.iter_mut() {
+        let sensitivity = 0.005;
+        zoom.zoom = (zoom.zoom + delta * sensitivity).clamp(-100.0, 0.0);
+    }
+}
+
+fn is_orbit_button_pressed(
+    buttons: &ButtonInput<MouseButton>,
+    keys: &ButtonInput<KeyCode>,
+) -> bool {
+    let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+
+    (alt_down && buttons.pressed(MouseButton::Left)) || buttons.pressed(MouseButton::Middle)
 }
 
 fn rotation_from_azimuth_elevation(azimuth: f32, elevation: f32) -> Mat3 {

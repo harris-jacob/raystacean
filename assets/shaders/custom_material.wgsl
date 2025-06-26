@@ -13,6 +13,8 @@ const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 var<uniform> aspect_ratio: vec2<f32>;
 @group(2) @binding(1)
 var<uniform> camera_rotation: mat3x3<f32>;
+@group(2) @binding(2)
+var<uniform> camera_zoom: f32;
 
 fn sdSphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -79,7 +81,7 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let pixel_coords = (in.uv - 0.5) * aspect_ratio;
     let ray_dir = normalize(vec3<f32>(pixel_coords * 2 / aspect_ratio.y, 1.0));
-    let ray_origin = vec3(0.0, 0.0, -5.0);
+    let ray_origin = vec3(0.0, 0.0, camera_zoom);
 
     let color = ray_march(ray_origin, ray_dir);
 
