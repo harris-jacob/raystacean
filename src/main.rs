@@ -11,7 +11,7 @@ pub struct CustomMaterial {
     #[uniform(0)]
     aspect_ratio: Vec2,
     #[uniform(1)]
-    camera_rotation: Mat3,
+    camera_transform: Mat4,
     #[uniform(2)]
     camera_zoom: f32,
 }
@@ -40,7 +40,8 @@ fn main() {
             (
                 orbit_camera_input,
                 zoom_camera_input,
-                update_material_rotation,
+                pan_camera_input,
+                update_material_transform,
                 update_material_zoom,
             ),
         )
@@ -58,6 +59,9 @@ struct ZoomCamera {
     zoom: f32,
 }
 
+#[derive(Component, Debug, Default)]
+struct PanCamera(Vec2);
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -66,8 +70,8 @@ fn setup(
 ) {
     let material_handle = materials.add(CustomMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
-        camera_rotation: Mat3::from_rotation_x(0.0),
-        camera_zoom: -5.0
+        camera_transform: Mat4::default(),
+        camera_zoom: -5.0,
     });
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
@@ -93,17 +97,21 @@ fn setup(
             elevation: 0.0,
         },
         ZoomCamera { zoom: -5.0 },
+        PanCamera::default(),
     ));
 }
 
-fn update_material_rotation(
-    query: Query<&OrbitCamera>,
+fn update_material_transform(
+    query: Query<(&OrbitCamera, &PanCamera)>,
     mut materials: ResMut<Assets<CustomMaterial>>,
 ) {
-    let orbit = query.single().expect("Material rotation");
+    let (orbit, pan) = query.single().expect("Material rotation");
 
     for mat in materials.iter_mut() {
-        mat.1.camera_rotation = rotation_from_azimuth_elevation(orbit.azimuth, orbit.elevation);
+        let rotation = rotation_from_azimuth_elevation(orbit.azimuth, orbit.elevation);
+        let translation = Mat4::from_translation(Vec3::new(pan.0.x, 0.0, pan.0.y));
+
+        mat.1.camera_transform = (rotation * translation).inverse();
     }
 }
 
@@ -152,6 +160,34 @@ fn zoom_camera_input(mut motion_evr: EventReader<MouseWheel>, mut query: Query<&
     }
 }
 
+fn pan_camera_input(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut motion_evr: EventReader<MouseMotion>,
+    mut query: Query<&mut PanCamera>,
+) {
+    if !is_pan_button_pressed(&buttons, &keys) {
+        return;
+    }
+
+    let mut delta = Vec2::ZERO;
+    for ev in motion_evr.read() {
+        delta += ev.delta;
+    }
+
+    for mut pan in query.iter_mut() {
+        let sensitivity = 0.005;
+
+        pan.0 += delta * sensitivity;
+    }
+}
+
+fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, keys: &ButtonInput<KeyCode>) -> bool {
+    let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+
+    !alt_down && buttons.pressed(MouseButton::Left)
+}
+
 fn is_orbit_button_pressed(
     buttons: &ButtonInput<MouseButton>,
     keys: &ButtonInput<KeyCode>,
@@ -161,9 +197,9 @@ fn is_orbit_button_pressed(
     (alt_down && buttons.pressed(MouseButton::Left)) || buttons.pressed(MouseButton::Middle)
 }
 
-fn rotation_from_azimuth_elevation(azimuth: f32, elevation: f32) -> Mat3 {
+fn rotation_from_azimuth_elevation(azimuth: f32, elevation: f32) -> Mat4 {
     let yaw = Quat::from_rotation_y(azimuth);
     let pitch = Quat::from_rotation_x(elevation);
     let rotation = pitch * yaw;
-    Mat3::from_quat(rotation).inverse()
+    Mat4::from_quat(rotation)
 }

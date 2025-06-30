@@ -12,7 +12,7 @@ const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 @group(2) @binding(0)
 var<uniform> aspect_ratio: vec2<f32>;
 @group(2) @binding(1)
-var<uniform> camera_rotation: mat3x3<f32>;
+var<uniform> camera_transform: mat4x4<f32>;
 @group(2) @binding(2)
 var<uniform> camera_zoom: f32;
 
@@ -57,9 +57,9 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
 
     for (var i = 0; i < MAX_STEPS; i++) {
         var pos = cameraOrigin + dist * cameraDir;
-        pos = camera_rotation * pos;
+        var transformed = camera_transform * vec4(pos, 1.0);
 
-        let result = map(pos);
+        let result = map(transformed.xyz / transformed.w);
 
         // Hit something
         if(result.dist < HIT_THRESHOLD) {
