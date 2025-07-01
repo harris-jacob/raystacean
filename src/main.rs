@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::log::LogPlugin;
 use bevy::math::prelude::Plane3d;
@@ -12,12 +10,9 @@ pub struct CustomMaterial {
     aspect_ratio: Vec2,
     #[uniform(1)]
     camera_transform: Mat4,
-    #[uniform(2)]
-    camera_zoom: f32,
 }
 
-impl Material for CustomMaterial {
-    // fn vertex_shader() -> ShaderRef {
+impl Material for CustomMaterial { // fn vertex_shader() -> ShaderRef {
     //     "shaders/custom_material.wgsl".into()
     // }
     fn fragment_shader() -> ShaderRef {
@@ -42,7 +37,6 @@ fn main() {
                 zoom_camera_input,
                 pan_camera_input,
                 update_material_transform,
-                update_material_zoom,
             ),
         )
         .run();
@@ -50,6 +44,7 @@ fn main() {
 
 #[derive(Component, Debug)]
 struct OrbitCamera {
+    target: Vec3,
     azimuth: f32,
     elevation: f32,
 }
@@ -71,7 +66,6 @@ fn setup(
     let material_handle = materials.add(CustomMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         camera_transform: Mat4::default(),
-        camera_zoom: -5.0,
     });
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
@@ -92,7 +86,7 @@ fn setup(
         }),
         GlobalTransform::default(),
         OrbitCamera {
-            // target: Vec3::ZERO,
+            target: Vec3::ZERO,
             azimuth: 0.0,
             elevation: 0.0,
         },
@@ -102,24 +96,18 @@ fn setup(
 }
 
 fn update_material_transform(
-    query: Query<(&OrbitCamera, &PanCamera)>,
+    query: Query<(&OrbitCamera, &PanCamera, &ZoomCamera)>,
     mut materials: ResMut<Assets<CustomMaterial>>,
 ) {
-    let (orbit, pan) = query.single().expect("Material rotation");
+    let (orbit, pan, zoom) = query.single().expect("Material rotation");
 
     for mat in materials.iter_mut() {
-        let rotation = rotation_from_azimuth_elevation(orbit.azimuth, orbit.elevation);
-        let translation = Mat4::from_translation(Vec3::new(pan.0.x, 0.0, pan.0.y));
 
-        mat.1.camera_transform = (rotation * translation).inverse();
-    }
-}
+        let transform = Transform::default()
+            .with_rotation(rotation_from_azimuth_elevation(orbit.azimuth, orbit.elevation))
+            .with_translation(Vec3::new(0.0, 0.0, -zoom.zoom));
 
-fn update_material_zoom(query: Query<&ZoomCamera>, mut materials: ResMut<Assets<CustomMaterial>>) {
-    let zoom = query.single().expect("Material zoom");
-
-    for mat in materials.iter_mut() {
-        mat.1.camera_zoom = zoom.zoom;
+        mat.1.camera_transform = transform.compute_matrix().inverse();
     }
 }
 
@@ -155,8 +143,8 @@ fn zoom_camera_input(mut motion_evr: EventReader<MouseWheel>, mut query: Query<&
     }
 
     for mut zoom in query.iter_mut() {
-        let sensitivity = 0.005;
-        zoom.zoom = (zoom.zoom + delta * sensitivity).clamp(-100.0, 0.0);
+        let sensitivity = 0.05;
+        zoom.zoom = (zoom.zoom + delta * sensitivity).clamp(-10.0, 0.0);
     }
 }
 
@@ -176,7 +164,7 @@ fn pan_camera_input(
     }
 
     for mut pan in query.iter_mut() {
-        let sensitivity = 0.005;
+        let sensitivity = 0.05;
 
         pan.0 += delta * sensitivity;
     }
@@ -197,9 +185,10 @@ fn is_orbit_button_pressed(
     (alt_down && buttons.pressed(MouseButton::Left)) || buttons.pressed(MouseButton::Middle)
 }
 
-fn rotation_from_azimuth_elevation(azimuth: f32, elevation: f32) -> Mat4 {
+fn rotation_from_azimuth_elevation(azimuth: f32, elevation: f32) -> Quat {
     let yaw = Quat::from_rotation_y(azimuth);
     let pitch = Quat::from_rotation_x(elevation);
     let rotation = pitch * yaw;
-    Mat4::from_quat(rotation)
+
+   rotation
 }
