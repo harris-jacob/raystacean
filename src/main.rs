@@ -36,7 +36,7 @@ fn main() {
             (
                 orbit_camera_input,
                 zoom_camera_input,
-                // pan_camera_input,
+                pan_camera_input,
                 update_material_transform,
             ),
         )
@@ -147,27 +147,31 @@ fn zoom_camera_input(
     }
 }
 
-// fn pan_camera_input(
-//     buttons: Res<ButtonInput<MouseButton>>,
-//     keys: Res<ButtonInput<KeyCode>>,
-//     mut motion_evr: EventReader<MouseMotion>,
-//     mut query: Query<&mut OrbitControls>,
-// ) {
-//     if !is_pan_button_pressed(&buttons, &keys) {
-//         return;
-//     }
+fn pan_camera_input(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut motion_evr: EventReader<MouseMotion>,
+    mut query: Query<&mut OrbitControls>,
+) {
+    if !is_pan_button_pressed(&buttons, &keys) {
+        return;
+    }
 
-//     let mut delta = Vec2::ZERO;
-//     for ev in motion_evr.read() {
-//         delta += ev.delta;
-//     }
+    let mut delta = Vec2::ZERO;
+    for ev in motion_evr.read() {
+        delta += ev.delta;
+    }
 
-//     for mut controls in query.iter_mut() {
-//         let sensitivity = 0.05;
+    for mut controls in query.iter_mut() {
+        let sensitivity = 0.05;
 
-//         controls.target += delta * sensitivity;
-//     }
-// }
+        let yaw = Quat::from_rotation_y(controls.azimuth);
+        let pan_right = yaw * Vec3::X * delta.x * sensitivity;
+        let pan_forward = yaw * Vec3::Z * delta.y * sensitivity;
+
+        controls.target += (pan_right - pan_forward);
+    }
+}
 
 fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, keys: &ButtonInput<KeyCode>) -> bool {
     let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
