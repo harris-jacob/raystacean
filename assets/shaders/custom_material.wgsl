@@ -12,9 +12,7 @@ const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 @group(2) @binding(0)
 var<uniform> aspect_ratio: vec2<f32>;
 @group(2) @binding(1)
-var<uniform> camera_rotation: mat3x3<f32>;
-@group(2) @binding(2)
-var<uniform> camera_zoom: f32;
+var<uniform> camera_transform: mat4x4<f32>;
 
 fn sdSphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -57,9 +55,9 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
 
     for (var i = 0; i < MAX_STEPS; i++) {
         var pos = cameraOrigin + dist * cameraDir;
-        pos = camera_rotation * pos;
+        var transformed = camera_transform * vec4(pos, 1.0);
 
-        let result = map(pos);
+        let result = map(transformed.xyz / transformed.w);
 
         // Hit something
         if(result.dist < HIT_THRESHOLD) {
@@ -81,7 +79,7 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let pixel_coords = (in.uv - 0.5) * aspect_ratio;
     let ray_dir = normalize(vec3<f32>(pixel_coords * 2 / aspect_ratio.y, 1.0));
-    let ray_origin = vec3(0.0, 0.0, camera_zoom);
+    let ray_origin = vec3(0.0, 0.0, 0.0);
 
     let color = ray_march(ray_origin, ray_dir);
 
