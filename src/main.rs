@@ -2,7 +2,28 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::log::LogPlugin;
 use bevy::math::prelude::Plane3d;
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
+use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::render::storage::ShaderStorageBuffer;
+
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub struct GpuBox {
+    pub position: [f32; 3],
+    pub size: f32, // uniform scale
+    pub color: [f32; 3],
+    _padding: f32,
+}
+
+impl Default for GpuBox {
+    fn default() -> Self {
+        GpuBox {
+            position: [0.0, 0.0, -2.0],
+            size: 1.0,
+            color: [255.0, 0.0, 0.0],
+            _padding: 0.0,
+        }
+    }
+}
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct CustomMaterial {
@@ -10,7 +31,12 @@ pub struct CustomMaterial {
     aspect_ratio: Vec2,
     #[uniform(1)]
     camera_transform: Mat4,
+    #[storage(2, read_only)]
+    pub boxes: Handle<ShaderStorageBuffer>,
 }
+
+#[derive(Resource)]
+struct CustomMaterialHandle(Handle<CustomMaterial>);
 
 impl Material for CustomMaterial {
     // fn vertex_shader() -> ShaderRef {
@@ -55,12 +81,20 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<CustomMaterial>>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
     window: Single<&Window>,
 ) {
+    let boxes = vec![GpuBox::default()];
+
+    let boxes = buffers.add(ShaderStorageBuffer::from(boxes));
+
     let material_handle = materials.add(CustomMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         camera_transform: Mat4::default(),
+        boxes,
     });
+
+    commands.insert_resource(CustomMaterialHandle(material_handle.clone()));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -73,6 +107,7 @@ fn setup(
     // camera
     let mut orbit_controls = OrbitControls::default();
     orbit_controls.distance = 5.0;
+
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -98,7 +133,7 @@ fn update_material_transform(
             orbit_controls.elevation,
             0.0,
         );
-        
+
         let camera_offset = rotation * Vec3::new(0.0, 0.0, orbit_controls.distance);
         let camera_position = orbit_controls.target + camera_offset;
 
@@ -169,14 +204,12 @@ fn pan_camera_input(
         let pan_right = yaw * Vec3::X * delta.x * sensitivity;
         let pan_forward = yaw * Vec3::Z * delta.y * sensitivity;
 
-        controls.target += (pan_right - pan_forward);
+        controls.target += pan_right - pan_forward;
     }
 }
 
-fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, keys: &ButtonInput<KeyCode>) -> bool {
-    let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-
-    !alt_down && buttons.pressed(MouseButton::Left)
+fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, _keys: &ButtonInput<KeyCode>) -> bool {
+    buttons.pressed(MouseButton::Right)
 }
 
 fn is_orbit_button_pressed(
@@ -186,4 +219,11 @@ fn is_orbit_button_pressed(
     let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
 
     (alt_down && buttons.pressed(MouseButton::Left)) || buttons.pressed(MouseButton::Middle)
+}
+
+fn update_boxes_to_gpu(
+    material_handles: Res<CustomMaterialHandle>,
+    mut materials: ResMut<Assets<CustomMaterial>>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+) {
 }
