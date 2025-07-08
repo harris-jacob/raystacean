@@ -47,6 +47,9 @@ pub struct CustomMaterial {
 #[derive(Resource)]
 struct CustomMaterialHandle(Handle<CustomMaterial>);
 
+#[derive(Resource)]
+struct BoxState(Vec<GpuBox>);
+
 #[derive(Resource, Deref)]
 struct BoxStorageHandle(Handle<ShaderStorageBuffer>);
 
@@ -110,14 +113,17 @@ fn setup(
 ) {
     let boxes = vec![GpuBox::default()];
 
-    let boxes = buffers.add(ShaderStorageBuffer::from(boxes));
+    // TODO: is there anyway to not clone this?
+    commands.insert_resource(BoxState(boxes.clone()));
 
-    commands.insert_resource(BoxStorageHandle(boxes.clone()));
+    let buffer_handle = buffers.add(ShaderStorageBuffer::from(boxes));
+
+    commands.insert_resource(BoxStorageHandle(buffer_handle.clone()));
 
     let material_handle = materials.add(CustomMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         camera_transform: Mat4::default(),
-        boxes,
+        boxes: buffer_handle,
     });
 
     commands.insert_resource(CustomMaterialHandle(material_handle.clone()));
@@ -241,6 +247,7 @@ fn place_box_system(
     windows: Query<&Window>,
     orbit_controls: Query<&OrbitControls>,
     box_handle: Res<BoxStorageHandle>,
+    mut box_state: ResMut<BoxState>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
     if !buttons.just_pressed(MouseButton::Left) {
@@ -279,6 +286,7 @@ fn place_box_system(
     let hit = ray_origin + ray_dir * t;
 
     let new_box = GpuBox::default().with_position(hit);
+    box_state.0.push(new_box);
 
-    buffer.set_data(vec![new_box]);
+    buffer.set_data(box_state.0.clone());
 }
