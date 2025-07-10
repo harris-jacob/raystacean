@@ -2,7 +2,37 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::log::LogPlugin;
 use bevy::math::prelude::Plane3d;
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
+use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::render::storage::ShaderStorageBuffer;
+
+#[repr(C)]
+#[derive(Clone, Copy, ShaderType)]
+pub struct GpuBox {
+    pub position: [f32; 3],
+    pub size: f32, // uniform scale
+    pub color: [f32; 3],
+    _padding: f32,
+}
+
+impl Default for GpuBox {
+    fn default() -> Self {
+        GpuBox {
+            position: [0.0, 0.0, -2.0],
+            size: 1.0,
+            color: [255.0, 0.0, 0.0],
+            _padding: 0.0,
+        }
+    }
+}
+
+impl GpuBox {
+    fn with_position(self, pos: Vec3) -> Self {
+        GpuBox {
+            position: [pos.x, pos.y, pos.z],
+            ..self
+        }
+    }
+}
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct CustomMaterial {
@@ -10,7 +40,18 @@ pub struct CustomMaterial {
     aspect_ratio: Vec2,
     #[uniform(1)]
     camera_transform: Mat4,
+    #[storage(2, read_only)]
+    pub boxes: Handle<ShaderStorageBuffer>,
 }
+
+#[derive(Resource)]
+struct CustomMaterialHandle(Handle<CustomMaterial>);
+
+#[derive(Resource)]
+struct BoxState(Vec<GpuBox>);
+
+#[derive(Resource, Deref)]
+struct BoxStorageHandle(Handle<ShaderStorageBuffer>);
 
 impl Material for CustomMaterial {
     // fn vertex_shader() -> ShaderRef {
@@ -38,6 +79,7 @@ fn main() {
                 zoom_camera_input,
                 pan_camera_input,
                 update_material_transform,
+                place_box_system,
             ),
         )
         .run();
@@ -51,16 +93,40 @@ struct OrbitControls {
     elevation: f32,
 }
 
+impl OrbitControls {
+    pub fn transform(&self) -> Mat4 {
+        let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
+
+        let camera_offset = rotation * Vec3::new(0.0, 0.0, self.distance);
+        let camera_position = self.target + camera_offset;
+
+        Mat4::look_at_lh(camera_position, self.target, Vec3::Y)
+    }
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<CustomMaterial>>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
     window: Single<&Window>,
 ) {
+    let boxes = vec![GpuBox::default()];
+
+    // TODO: is there anyway to not clone this?
+    commands.insert_resource(BoxState(boxes.clone()));
+
+    let buffer_handle = buffers.add(ShaderStorageBuffer::from(boxes));
+
+    commands.insert_resource(BoxStorageHandle(buffer_handle.clone()));
+
     let material_handle = materials.add(CustomMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         camera_transform: Mat4::default(),
+        boxes: buffer_handle,
     });
+
+    commands.insert_resource(CustomMaterialHandle(material_handle.clone()));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -73,6 +139,7 @@ fn setup(
     // camera
     let mut orbit_controls = OrbitControls::default();
     orbit_controls.distance = 5.0;
+
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -92,18 +159,7 @@ fn update_material_transform(
     let orbit_controls = query.single().expect("Material rotation");
 
     for mat in materials.iter_mut() {
-        let rotation = Quat::from_euler(
-            EulerRot::YXZ,
-            orbit_controls.azimuth,
-            orbit_controls.elevation,
-            0.0,
-        );
-        
-        let camera_offset = rotation * Vec3::new(0.0, 0.0, orbit_controls.distance);
-        let camera_position = orbit_controls.target + camera_offset;
-
-        mat.1.camera_transform =
-            Mat4::look_at_lh(camera_position, orbit_controls.target, Vec3::Y).inverse();
+        mat.1.camera_transform = orbit_controls.transform().inverse();
     }
 }
 
@@ -169,14 +225,12 @@ fn pan_camera_input(
         let pan_right = yaw * Vec3::X * delta.x * sensitivity;
         let pan_forward = yaw * Vec3::Z * delta.y * sensitivity;
 
-        controls.target += (pan_right - pan_forward);
+        controls.target += pan_right - pan_forward;
     }
 }
 
-fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, keys: &ButtonInput<KeyCode>) -> bool {
-    let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-
-    !alt_down && buttons.pressed(MouseButton::Left)
+fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, _keys: &ButtonInput<KeyCode>) -> bool {
+    buttons.pressed(MouseButton::Right)
 }
 
 fn is_orbit_button_pressed(
@@ -186,4 +240,53 @@ fn is_orbit_button_pressed(
     let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
 
     (alt_down && buttons.pressed(MouseButton::Left)) || buttons.pressed(MouseButton::Middle)
+}
+
+fn place_box_system(
+    buttons: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    orbit_controls: Query<&OrbitControls>,
+    box_handle: Res<BoxStorageHandle>,
+    mut box_state: ResMut<BoxState>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+) {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let window = windows.single().expect("single");
+    let orbit_controls = orbit_controls.single().expect("single");
+    let buffer = buffers.get_mut(&box_handle.0).expect("exists");
+
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    // TODO: tidy this math up and write some comments
+    let screen_size = window.size();
+    let ndc = (cursor_pos / screen_size) * 2.0 - Vec2::ONE;
+    let pixel_coords = ndc * Vec2::new(window.width() / window.height(), 1.0);
+
+    let ray_dir_camera_space = Vec3::new(pixel_coords.x, pixel_coords.y, 1.0).normalize();
+
+    let camera_inv = orbit_controls.transform().inverse();
+
+    let ray_dir = (camera_inv * ray_dir_camera_space.extend(0.0))
+        .truncate()
+        .normalize();
+    let ray_origin = (camera_inv * Vec4::new(0.0, 0.0, 0.0, 1.0)).truncate();
+
+    // Intersect with ground plane (Y=0)
+    let t = -ray_origin.y / ray_dir.y;
+
+    if t < 0.0 {
+        return;
+    }
+
+    let hit = ray_origin + ray_dir * t;
+
+    let new_box = GpuBox::default().with_position(hit);
+    box_state.0.push(new_box);
+
+    buffer.set_data(box_state.0.clone());
 }

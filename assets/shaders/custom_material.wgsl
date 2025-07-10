@@ -9,10 +9,18 @@ const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
 const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
 const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 
+struct GpuBox {
+    position: vec3<f32>,
+    size: f32, 
+    color: vec3<f32>,
+}
+
 @group(2) @binding(0)
 var<uniform> aspect_ratio: vec2<f32>;
 @group(2) @binding(1)
 var<uniform> camera_transform: mat4x4<f32>;
+@group(2) @binding(2)
+var<storage, read> boxes: array<GpuBox>;
 
 fn sdSphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -35,9 +43,14 @@ struct SdfResult {
 }
 
 fn map(p: vec3<f32>) -> SdfResult {
-    var sdf =  sdBox(p - vec3<f32>(-2.0, 0, 0.0), vec3<f32>(1.0), BLUE);
-    sdf =  min_sdf(sdf, sdBox(p - vec3<f32>(2.0, 0, 0.0), vec3<f32>(1.0), RED));
-    sdf =  min_sdf(sdf, sdGround(p - vec3<f32>(0.0, 2.0, 0.0)));
+    var sdf =  sdGround(p - vec3<f32>(0.0, 2.0, 0.0));
+
+    for (var i = 0u; i < arrayLength(&boxes); i++) {
+        let box = boxes[i];
+        let b = sdBox(p - box.position, vec3<f32>(box.size), box.color);
+
+        sdf = min_sdf(sdf, b);
+    }
 
     return sdf;
 }
