@@ -30,9 +30,9 @@ pub struct CameraControls {
 impl Default for CameraControls {
     fn default() -> Self {
         Self {
-            target: Vec3::new(0.0, 0.0, 5.0),
+            target: Vec3::new(0.0, 0.0, 0.0),
             azimuth: 0.0,
-            distance: 0.0,
+            distance: 10.0,
             elevation: 0.0,
         }
     }

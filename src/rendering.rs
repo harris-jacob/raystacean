@@ -1,26 +1,35 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::render::storage::ShaderStorageBuffer;
+
+use crate::geometry;
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
-            .add_systems(Startup, setup);
+            .add_systems(Startup, setup)
+            .add_systems(Update, boxes_to_gpu);
     }
 }
 
-pub fn setup(
+fn setup(
     mut materials: ResMut<Assets<SceneMaterial>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
     window: Single<&Window>,
 ) {
+    let boxes = buffers.add(ShaderStorageBuffer::default());
+
     let material_handle = materials.add(SceneMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         camera_transform: Mat4::default(),
+        boxes: boxes.clone(),
     });
 
+    commands.insert_resource(ShaderBufferHandle(boxes.clone()));
     commands.insert_resource(SceneMaterialHandle(material_handle.clone()));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
@@ -42,6 +51,26 @@ pub fn setup(
     ));
 }
 
+fn boxes_to_gpu(
+    boxes: Query<&geometry::BoxGeometry>,
+    buffer_handle: Res<ShaderBufferHandle>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+) {
+    let buffer = buffer_handle.get_mut(&mut buffers);
+
+    let gpu_data: Vec<GpuBox> = boxes
+        .iter()
+        .map(|b| GpuBox {
+            position: b.position.into(),
+            size: b.size,
+            color: id_to_color(b.id),
+            _padding: 0.0,
+        })
+        .collect();
+
+    buffer.set_data(gpu_data);
+}
+
 #[repr(C)]
 #[derive(Clone, ShaderType)]
 pub struct GpuBox {
@@ -57,12 +86,26 @@ pub struct SceneMaterial {
     aspect_ratio: Vec2,
     #[uniform(1)]
     pub camera_transform: Mat4,
-    // #[storage(2, read_only)]
-    // pub boxes: Handle<ShaderStorageBuffer>,
+    #[storage(2, read_only)]
+    pub boxes: Handle<ShaderStorageBuffer>,
 }
 
 #[derive(Resource)]
 pub struct SceneMaterialHandle(Handle<SceneMaterial>);
+
+#[derive(Resource)]
+pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);
+
+impl ShaderBufferHandle {
+    pub fn get_mut<'a>(
+        &self,
+        assets: &'a mut Assets<ShaderStorageBuffer>,
+    ) -> &'a mut ShaderStorageBuffer {
+        assets
+            .get_mut(&self.0)
+            .expect("ShaderStorageBuffer should exist")
+    }
+}
 
 impl SceneMaterialHandle {
     pub fn get_mut<'a>(&self, assets: &'a mut Assets<SceneMaterial>) -> &'a mut SceneMaterial {
@@ -74,4 +117,12 @@ impl Material for SceneMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/custom_material.wgsl".into()
     }
+}
+
+fn id_to_color(id: u32) -> [f32; 3] {
+    let r = ((id & 0xFF) as f32) / 255.0;
+    let g = (((id >> 8) & 0xFF) as f32) / 255.0;
+    let b = (((id >> 16) & 0xFF) as f32) / 255.0;
+
+    [r, g, b]
 }

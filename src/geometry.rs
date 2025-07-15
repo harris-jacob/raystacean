@@ -1,26 +1,42 @@
-use bevy::{prelude::*, render::storage::ShaderStorageBuffer};
+use bevy::prelude::*;
 
-use crate::{camera, rendering::GpuBox};
+use crate::camera;
 
+pub struct GeometryPlugin;
+
+impl Plugin for GeometryPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(GlobalId::default())
+            .add_systems(Update, place_box_system);
+    }
+}
 
 #[derive(Component)]
 pub struct BoxGeometry {
     pub position: Vec3,
     pub size: f32,
+    pub id: u32,
 }
 
-impl Default for BoxGeometry {
-    fn default() -> Self {
-        BoxGeometry {
-            position: Vec3::new(0.0, 0.0, -2.0),
-            size: 1.0,
-        }
+#[derive(Resource, Default)]
+struct GlobalId(u32);
+
+impl GlobalId {
+    pub fn next(&mut self) -> u32 {
+        let id = self.0;
+        self.0 += 1;
+
+        id
     }
 }
 
 impl BoxGeometry {
-    fn with_position(self, position: Vec3) -> Self {
-        BoxGeometry { position, ..self }
+    fn new(position: Vec3, id: u32) -> Self {
+        BoxGeometry {
+            position,
+            size: 1.0,
+            id,
+        }
     }
 }
 
@@ -28,15 +44,14 @@ fn place_box_system(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
     camera: Res<camera::CameraControls>,
-    // TODO: this is rendering
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut global_id: ResMut<GlobalId>,
+    mut commands: Commands,
 ) {
     if !buttons.just_pressed(MouseButton::Left) {
         return;
     }
 
     let window = windows.single().expect("single");
-
 
     let Some(cursor_pos) = window.cursor_position() else {
         return;
@@ -65,19 +80,5 @@ fn place_box_system(
 
     let hit = ray_origin + ray_dir * t;
 
-    box_state.0.push(new_box);
-
-    buffer.set_data(box_state.0.clone());
-}
-
-
-impl From<BoxGeometry> for GpuBox {
-    fn from(value: BoxGeometry) -> Self {
-        GpuBox {
-            position: todo!(),
-            size: todo!(),
-            color: todo!(),
-            // _padding: todo!(),
-        }
-    }
+    commands.spawn(BoxGeometry::new(hit, global_id.next()));
 }
