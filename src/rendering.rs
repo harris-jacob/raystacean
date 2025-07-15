@@ -5,13 +5,15 @@ pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup);
+        app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
+            .add_systems(Startup, setup);
     }
 }
 
 pub fn setup(
     mut materials: ResMut<Assets<SceneMaterial>>,
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
     window: Single<&Window>,
 ) {
     let material_handle = materials.add(SceneMaterial {
@@ -20,6 +22,24 @@ pub fn setup(
     });
 
     commands.insert_resource(SceneMaterialHandle(material_handle.clone()));
+
+    let mesh = meshes.add(Mesh::from(Plane3d::new(
+        Vec3::Z,
+        Vec2::new(window.width() * 0.5, window.height() * 0.5),
+    )));
+
+    commands.spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)));
+
+    // TODO: should this be here?
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Projection::from(OrthographicProjection {
+            scale: 1.0,
+            ..OrthographicProjection::default_3d()
+        }),
+        GlobalTransform::default(),
+    ));
 }
 
 #[repr(C)]

@@ -20,7 +20,7 @@ impl Plugin for CameraPlugin {
 }
 
 #[derive(Resource, Debug)]
-struct CameraControls {
+pub struct CameraControls {
     target: Vec3,
     azimuth: f32,
     distance: f32,
