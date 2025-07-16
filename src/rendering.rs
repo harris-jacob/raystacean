@@ -1,6 +1,8 @@
+use bevy::platform::hash::FixedHasher;
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
 use bevy::render::storage::ShaderStorageBuffer;
+use std::hash::BuildHasher;
 
 use crate::geometry;
 
@@ -39,7 +41,6 @@ fn setup(
 
     commands.spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)));
 
-    // TODO: should this be here?
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -120,6 +121,8 @@ impl Material for SceneMaterial {
 }
 
 fn id_to_color(id: u32) -> [f32; 3] {
+    let id = FixedHasher.hash_one(id);
+
     let r = ((id & 0xFF) as f32) / 255.0;
     let g = (((id >> 8) & 0xFF) as f32) / 255.0;
     let b = (((id >> 16) & 0xFF) as f32) / 255.0;

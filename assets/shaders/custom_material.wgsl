@@ -43,7 +43,7 @@ struct SdfResult {
 }
 
 fn map(p: vec3<f32>) -> SdfResult {
-    var sdf =  sdGround(p - vec3<f32>(0.0, 2.0, 0.0));
+    var sdf =  sdGround(p);
 
     for (var i = 0u; i < arrayLength(&boxes); i++) {
         let box = boxes[i];

@@ -33,7 +33,7 @@ impl Default for CameraControls {
             target: Vec3::new(0.0, 0.0, 0.0),
             azimuth: 0.0,
             distance: 10.0,
-            elevation: 0.0,
+            elevation: std::f32::consts::FRAC_PI_4,
         }
     }
 }
@@ -60,6 +60,7 @@ fn orbit_camera_input(
     }
 
     let mut delta = Vec2::ZERO;
+    dbg!(delta);
     for ev in motion_evr.read() {
         delta += ev.delta;
     }
@@ -79,7 +80,7 @@ fn zoom_camera_input(mut motion_evr: EventReader<MouseWheel>, mut camera: ResMut
     }
 
     let sensitivity = 0.05;
-    camera.distance = (camera.distance + delta * sensitivity).clamp(0.1, 10.0);
+    camera.distance = (camera.distance + delta * sensitivity).clamp(0.1, 20.0);
 }
 
 fn pan_camera_input(
