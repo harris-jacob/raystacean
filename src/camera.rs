@@ -60,7 +60,6 @@ fn orbit_camera_input(
     }
 
     let mut delta = Vec2::ZERO;
-    dbg!(delta);
     for ev in motion_evr.read() {
         delta += ev.delta;
     }

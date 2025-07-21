@@ -1,6 +1,6 @@
 use bevy::platform::hash::FixedHasher;
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::render::render_resource::{AsBindGroup, BufferUsages, ShaderRef, ShaderType};
 use bevy::render::storage::ShaderStorageBuffer;
 use std::hash::BuildHasher;
 
@@ -24,14 +24,21 @@ fn setup(
     window: Single<&Window>,
 ) {
     let boxes = buffers.add(ShaderStorageBuffer::default());
+    let selection_buffer = vec![0.0; 3];
+    let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
+    selection_buffer.buffer_description.usage |= BufferUsages::COPY_SRC;
+
+    let selection = buffers.add(selection_buffer);
 
     let material_handle = materials.add(SceneMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         camera_transform: Mat4::default(),
         boxes: boxes.clone(),
+        selection: selection.clone(),
     });
 
-    commands.insert_resource(ShaderBufferHandle(boxes.clone()));
+    commands.insert_resource(ShaderBufferHandle(boxes));
+    commands.insert_resource(SelectionBufferHandle(selection));
     commands.insert_resource(SceneMaterialHandle(material_handle.clone()));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
@@ -64,7 +71,7 @@ fn boxes_to_gpu(
         .map(|b| GpuBox {
             position: b.position.into(),
             size: b.size,
-            color: id_to_color(b.id),
+            color: b.id.to_color(),
             _padding: 0.0,
         })
         .collect();
@@ -89,6 +96,9 @@ pub struct SceneMaterial {
     pub camera_transform: Mat4,
     #[storage(2, read_only)]
     pub boxes: Handle<ShaderStorageBuffer>,
+
+    #[storage(3)]
+    pub selection: Handle<ShaderStorageBuffer>,
 }
 
 #[derive(Resource)]
@@ -96,6 +106,9 @@ pub struct SceneMaterialHandle(Handle<SceneMaterial>);
 
 #[derive(Resource)]
 pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);
+
+#[derive(Resource)]
+pub struct SelectionBufferHandle(Handle<ShaderStorageBuffer>);
 
 impl ShaderBufferHandle {
     pub fn get_mut<'a>(
@@ -118,14 +131,4 @@ impl Material for SceneMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/custom_material.wgsl".into()
     }
-}
-
-fn id_to_color(id: u32) -> [f32; 3] {
-    let id = FixedHasher.hash_one(id);
-
-    let r = ((id & 0xFF) as f32) / 255.0;
-    let g = (((id >> 8) & 0xFF) as f32) / 255.0;
-    let b = (((id >> 16) & 0xFF) as f32) / 255.0;
-
-    [r, g, b]
 }

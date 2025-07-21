@@ -1,6 +1,7 @@
-use bevy::prelude::*;
+use bevy::{platform::hash::FixedHasher, prelude::*};
+use std::hash::BuildHasher;
 
-use crate::camera;
+use crate::{camera, maths};
 
 pub struct GeometryPlugin;
 
@@ -15,7 +16,7 @@ impl Plugin for GeometryPlugin {
 pub struct BoxGeometry {
     pub position: Vec3,
     pub size: f32,
-    pub id: u32,
+    pub id: GeometryId,
 }
 
 #[derive(Resource, Default)]
@@ -35,7 +36,7 @@ impl BoxGeometry {
         BoxGeometry {
             position,
             size: 1.0,
-            id,
+            id: GeometryId::new(id),
         }
     }
 }
@@ -81,4 +82,49 @@ fn place_box_system(
     let hit = ray_origin + ray_dir * t;
 
     commands.spawn(BoxGeometry::new(hit, global_id.next()));
+}
+
+pub struct GeometryId(u32);
+
+impl GeometryId {
+    pub fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub fn to_color(&self) -> [f32; 3] {
+        let id = scramble(self.0);
+
+        let r = ((id & 0xFF) as f32) / 255.0;
+        let g = (((id >> 8) & 0xFF) as f32) / 255.0;
+        let b = (((id >> 16) & 0xFF) as f32) / 255.0;
+
+        let scrambled = id;
+        dbg!(scrambled);
+        Self::from_color([r, g, b]); 
+
+        [r, g, b]
+    }
+
+    pub fn from_color(color: [f32; 3]) -> Self {
+        let r = (color[0] * 255.0) as u32;
+        let g = ((color[1] * 255.0) as u32) << 8;
+        let b = ((color[2] * 255.0) as u32) << 16;
+
+
+        let id = unscramble(r | g | b);
+        let unscrambled = id;
+
+        dbg!(unscrambled);
+
+        Self(unscrambled)
+    }
+}
+
+
+fn scramble(x: u32) -> u32 {
+    0
+}
+
+fn unscramble(y: u32) -> u32 {
+    0
 }
