@@ -1,7 +1,6 @@
-use bevy::{platform::hash::FixedHasher, prelude::*};
-use std::hash::BuildHasher;
+use bevy::prelude::*;
 
-use crate::{camera, maths};
+use crate::camera;
 
 pub struct GeometryPlugin;
 
@@ -98,10 +97,6 @@ impl GeometryId {
         let g = (((id >> 8) & 0xFF) as f32) / 255.0;
         let b = (((id >> 16) & 0xFF) as f32) / 255.0;
 
-        let scrambled = id;
-        dbg!(scrambled);
-        Self::from_color([r, g, b]); 
-
         [r, g, b]
     }
 
@@ -110,21 +105,24 @@ impl GeometryId {
         let g = ((color[1] * 255.0) as u32) << 8;
         let b = ((color[2] * 255.0) as u32) << 16;
 
-
         let id = unscramble(r | g | b);
-        let unscrambled = id;
 
-        dbg!(unscrambled);
-
-        Self(unscrambled)
+        Self(id)
     }
 }
 
+const MODULUS: u32 = 1 << 24;
+const MULTIPLIER: u32 = 0x00C297D7;
+const INV_MULTIPLIER: u32 = 0xDB4BE7;
+const XOR_MASK: u32 = 0x0055AA33;
 
 fn scramble(x: u32) -> u32 {
-    0
+    assert!(x < MODULUS);
+    let x = x ^ XOR_MASK;
+    x.wrapping_mul(MULTIPLIER) & 0xFFFFFF
 }
 
-fn unscramble(y: u32) -> u32 {
-    0
+fn unscramble(x: u32) -> u32 {
+    let x = x.wrapping_mul(INV_MULTIPLIER) & 0xFFFFFF;
+    x ^ XOR_MASK
 }

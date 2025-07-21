@@ -1,7 +1,6 @@
 mod camera;
 mod geometry;
 mod rendering;
-mod maths;
 
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
