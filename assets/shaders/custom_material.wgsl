@@ -1,8 +1,8 @@
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
 #import bevy_pbr::forward_io::VertexOutput
 
-const MAX_STEPS: i32 = 256;
-const HIT_THRESHOLD: f32 = 0.001;
+const MAX_STEPS: i32 = 100;
+const HIT_THRESHOLD: f32 = 0.1;
 const MAX_DISTANCE: f32 = 1000.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
@@ -20,7 +20,11 @@ var<uniform> aspect_ratio: vec2<f32>;
 @group(2) @binding(1)
 var<uniform> camera_transform: mat4x4<f32>;
 @group(2) @binding(2)
+var<uniform> cursor_position: vec2<f32>;
+@group(2) @binding(3)
 var<storage, read> boxes: array<GpuBox>;
+@group(2) @binding(4)
+var<storage, read_write> selection: array<f32>;
 
 fn sdSphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -95,6 +99,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let ray_origin = vec3(0.0, 0.0, 0.0);
 
     let color = ray_march(ray_origin, ray_dir);
+
+    let cursor_position_ndc = (cursor_position / aspect_ratio - 0.5) * aspect_ratio;
+
+
+    if distance(pixel_coords, cursor_position_ndc) < 0.5 {
+        selection[0] = color.x;
+        selection[1] = color.y;
+        selection[2] = color.z;
+    }
 
     return vec4<f32>(color, 1.0);
 }

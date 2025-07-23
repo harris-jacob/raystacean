@@ -83,6 +83,7 @@ fn place_box_system(
     commands.spawn(BoxGeometry::new(hit, global_id.next()));
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct GeometryId(u32);
 
 impl GeometryId {
@@ -90,7 +91,7 @@ impl GeometryId {
         Self(id)
     }
 
-    pub fn to_color(&self) -> [f32; 3] {
+    pub fn to_color(self) -> [f32; 3] {
         let id = scramble(self.0);
 
         let r = ((id & 0xFF) as f32) / 255.0;

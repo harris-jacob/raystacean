@@ -1,10 +1,9 @@
-use bevy::platform::hash::FixedHasher;
 use bevy::prelude::*;
+use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use bevy::render::render_resource::{AsBindGroup, BufferUsages, ShaderRef, ShaderType};
 use bevy::render::storage::ShaderStorageBuffer;
-use std::hash::BuildHasher;
 
-use crate::geometry;
+use crate::geometry::{self, GeometryId};
 
 pub struct RenderingPlugin;
 
@@ -12,7 +11,7 @@ impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
             .add_systems(Startup, setup)
-            .add_systems(Update, boxes_to_gpu);
+            .add_systems(Update, (boxes_to_gpu, cursor_position));
     }
 }
 
@@ -35,7 +34,18 @@ fn setup(
         camera_transform: Mat4::default(),
         boxes: boxes.clone(),
         selection: selection.clone(),
+        cursor_position: Vec2::default(),
     });
+
+    commands.spawn(Readback::buffer(selection.clone())).observe(
+        |trigger: Trigger<ReadbackComplete>| {
+            let data: Vec<f32> = trigger.event().to_shader_type();
+
+            let id = GeometryId::from_color([data[0], data[1], data[2]]);
+
+            dbg!(id);
+        },
+    );
 
     commands.insert_resource(ShaderBufferHandle(boxes));
     commands.insert_resource(SelectionBufferHandle(selection));
@@ -79,6 +89,21 @@ fn boxes_to_gpu(
     buffer.set_data(gpu_data);
 }
 
+fn cursor_position(
+    windows: Query<&Window>,
+    scene_material: Res<SceneMaterialHandle>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+) {
+    let window = windows.single().expect("single");
+    let scene_material = scene_material.get_mut(&mut materials);
+
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    scene_material.cursor_position = cursor_pos;
+}
+
 #[repr(C)]
 #[derive(Clone, ShaderType)]
 pub struct GpuBox {
@@ -94,10 +119,11 @@ pub struct SceneMaterial {
     aspect_ratio: Vec2,
     #[uniform(1)]
     pub camera_transform: Mat4,
-    #[storage(2, read_only)]
+    #[uniform(2)]
+    pub cursor_position: Vec2,
+    #[storage(3, read_only)]
     pub boxes: Handle<ShaderStorageBuffer>,
-
-    #[storage(3)]
+    #[storage(4)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 
