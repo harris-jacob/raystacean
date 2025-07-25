@@ -43,7 +43,6 @@ fn setup(
 
             let id = GeometryId::from_color([data[0], data[1], data[2]]);
 
-            dbg!(id);
         },
     );
 

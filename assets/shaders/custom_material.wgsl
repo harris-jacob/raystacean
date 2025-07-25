@@ -8,6 +8,7 @@ const MAX_DISTANCE: f32 = 1000.0;
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
 const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
 const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
+const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
 struct GpuBox {
     position: vec3<f32>,
@@ -26,18 +27,30 @@ var<storage, read> boxes: array<GpuBox>;
 @group(2) @binding(4)
 var<storage, read_write> selection: array<f32>;
 
-fn sdSphere(p: vec3<f32>, r: f32) -> SdfResult {
+fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
     return SdfResult(d, BLUE);
 }
 
-fn sdBox(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
+fn sd_box(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
   let q = abs(p) - b;
   let d = length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)), 0.0);
   return SdfResult(d, color);
 }
 
-fn sdGround(p: vec3<f32>) -> SdfResult {
+fn sd_box_with_outline(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
+    let e = 0.5;
+
+    let outer = sd_box(p, b, BLACK);
+    let inner = sd_box(p, b, RED);
+
+    let outline = SdfResult(min(inner.dist, outer.dist), BLACK);
+
+
+    return outline;
+}
+
+fn sd_ground(p: vec3<f32>) -> SdfResult {
   return SdfResult(-p.y, WHITE);
 }
 
@@ -47,11 +60,11 @@ struct SdfResult {
 }
 
 fn map(p: vec3<f32>) -> SdfResult {
-    var sdf =  sdGround(p);
+    var sdf =  sd_ground(p);
 
     for (var i = 0u; i < arrayLength(&boxes); i++) {
         let box = boxes[i];
-        let b = sdBox(p - box.position, vec3<f32>(box.size), box.color);
+        let b = sd_box_with_outline(p - box.position, vec3<f32>(box.size), box.color);
 
         sdf = min_sdf(sdf, b);
     }
@@ -61,6 +74,15 @@ fn map(p: vec3<f32>) -> SdfResult {
 
 fn min_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
     if (s1.dist < s2.dist) {
+        return s1;
+    };
+
+    return s2;
+}
+
+
+fn max_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
+    if (s1.dist > s2.dist) {
         return s1;
     };
 
