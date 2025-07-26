@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::camera;
+use crate::{camera, controls};
 
 pub struct GeometryPlugin;
 
@@ -41,13 +41,16 @@ impl BoxGeometry {
 }
 
 fn place_box_system(
-    buttons: Res<ButtonInput<MouseButton>>,
+    control_mode: Res<controls::ControlMode>,
+    control_intent: Res<controls::ControlIntent>,
     windows: Query<&Window>,
     camera: Res<camera::CameraControls>,
     mut global_id: ResMut<GlobalId>,
     mut commands: Commands,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) {
+    if *control_mode != controls::ControlMode::PlaceGeometry
+        || *control_intent != controls::ControlIntent::ContextAction
+    {
         return;
     }
 
@@ -78,12 +81,15 @@ fn place_box_system(
         return;
     }
 
-    let hit = ray_origin + ray_dir * t;
+    let mut hit = ray_origin + ray_dir * t;
+
+    // sit the box on the plane rather than putting the center on it
+    hit.y -= 1.0;
 
     commands.spawn(BoxGeometry::new(hit, global_id.next()));
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GeometryId(u32);
 
 impl GeometryId {
@@ -101,10 +107,10 @@ impl GeometryId {
         [r, g, b]
     }
 
-    pub fn from_color(color: [f32; 3]) -> Self {
-        let r = (color[0] * 255.0) as u32;
-        let g = ((color[1] * 255.0) as u32) << 8;
-        let b = ((color[2] * 255.0) as u32) << 16;
+    pub fn from_color(color: Vec3) -> Self {
+        let r = (color.x * 255.0) as u32;
+        let g = ((color.y * 255.0) as u32) << 8;
+        let b = ((color.z * 255.0) as u32) << 16;
 
         let id = unscramble(r | g | b);
 

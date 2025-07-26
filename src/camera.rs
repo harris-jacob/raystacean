@@ -1,7 +1,7 @@
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 
-use crate::rendering;
+use crate::{controls, rendering};
 
 pub struct CameraPlugin;
 
@@ -50,12 +50,11 @@ impl CameraControls {
 }
 
 fn orbit_camera_input(
-    buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
+    control_intent: Res<controls::ControlIntent>,
     mut motion_evr: EventReader<MouseMotion>,
     mut camera: ResMut<CameraControls>,
 ) {
-    if !is_orbit_button_pressed(&buttons, &keys) {
+    if *control_intent != controls::ControlIntent::Orbitting {
         return;
     }
 
@@ -83,12 +82,11 @@ fn zoom_camera_input(mut motion_evr: EventReader<MouseWheel>, mut camera: ResMut
 }
 
 fn pan_camera_input(
-    buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
+    control_intent: Res<controls::ControlIntent>,
     mut motion_evr: EventReader<MouseMotion>,
     mut camera: ResMut<CameraControls>,
 ) {
-    if !is_pan_button_pressed(&buttons, &keys) {
+    if *control_intent != controls::ControlIntent::Panning {
         return;
     }
 
@@ -114,17 +112,4 @@ fn update_material_transform(
     let material = material_handle.get_mut(&mut materials);
 
     material.camera_transform = camera.transform().inverse();
-}
-
-fn is_pan_button_pressed(buttons: &ButtonInput<MouseButton>, _keys: &ButtonInput<KeyCode>) -> bool {
-    buttons.pressed(MouseButton::Right)
-}
-
-fn is_orbit_button_pressed(
-    buttons: &ButtonInput<MouseButton>,
-    keys: &ButtonInput<KeyCode>,
-) -> bool {
-    let alt_down = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-
-    (alt_down && buttons.pressed(MouseButton::Left)) || buttons.pressed(MouseButton::Middle)
 }

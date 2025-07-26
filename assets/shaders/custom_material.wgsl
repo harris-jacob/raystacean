@@ -2,7 +2,7 @@
 #import bevy_pbr::forward_io::VertexOutput
 
 const MAX_STEPS: i32 = 100;
-const HIT_THRESHOLD: f32 = 0.1;
+const HIT_THRESHOLD: f32 = 0.01;
 const MAX_DISTANCE: f32 = 1000.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
@@ -14,6 +14,7 @@ struct GpuBox {
     position: vec3<f32>,
     size: f32, 
     color: vec3<f32>,
+    selected: u32
 }
 
 @group(2) @binding(0)
@@ -38,16 +39,15 @@ fn sd_box(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
   return SdfResult(d, color);
 }
 
-fn sd_box_with_outline(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
-    let e = 0.5;
-
-    let outer = sd_box(p, b, BLACK);
-    let inner = sd_box(p, b, RED);
-
-    let outline = SdfResult(min(inner.dist, outer.dist), BLACK);
-
-
-    return outline;
+fn sd_box_frame(in: vec3<f32>, b: vec3<f32>, e: f32, color: vec3<f32>) -> SdfResult {
+    let p = abs(in)-b;
+    let q = abs(p+e)-e;
+  
+  return SdfResult(min(min(
+      length(max(vec3(p.x,q.y,q.z), vec3(0.0)))+min(max(p.x,max(q.y,q.z)), 0.0),
+      length(max(vec3(q.x,p.y,q.z), vec3(0.0)))+min(max(q.x, max(p.y,q.z)), 0.0)),
+      length(max(vec3(q.x,q.y,p.z), vec3(0.0)))+min(max(q.x,max(q.y,p.z)), 0.0)
+      ), color);
 }
 
 fn sd_ground(p: vec3<f32>) -> SdfResult {
@@ -64,12 +64,24 @@ fn map(p: vec3<f32>) -> SdfResult {
 
     for (var i = 0u; i < arrayLength(&boxes); i++) {
         let box = boxes[i];
-        let b = sd_box_with_outline(p - box.position, vec3<f32>(box.size), box.color);
+
+        if(box.selected == 1) {
+            let outline = sd_box_frame(p - box.position, vec3<f32>(box.size + 0.05), 0.02, RED);
+            sdf = min_sdf(sdf, outline);
+        }
+
+        let b = sd_box(p - box.position, vec3<f32>(box.size), box.color);
 
         sdf = min_sdf(sdf, b);
     }
 
     return sdf;
+}
+
+fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
+    let inverted = SdfResult(-s1.dist, s1.color);
+
+    return max_sdf(inverted, s2);
 }
 
 fn min_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {

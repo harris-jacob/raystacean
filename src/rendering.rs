@@ -3,7 +3,8 @@ use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use bevy::render::render_resource::{AsBindGroup, BufferUsages, ShaderRef, ShaderType};
 use bevy::render::storage::ShaderStorageBuffer;
 
-use crate::geometry::{self, GeometryId};
+use crate::{events, selection};
+use crate::geometry;
 
 pub struct RenderingPlugin;
 
@@ -38,16 +39,16 @@ fn setup(
     });
 
     commands.spawn(Readback::buffer(selection.clone())).observe(
-        |trigger: Trigger<ReadbackComplete>| {
+        |trigger: Trigger<ReadbackComplete>, mut ev: EventWriter<events::PixelColorUnderCursor>| {
             let data: Vec<f32> = trigger.event().to_shader_type();
 
-            let id = GeometryId::from_color([data[0], data[1], data[2]]);
-
+            ev.write(events::PixelColorUnderCursor::new(Vec3::new(
+                data[0], data[1], data[2],
+            )));
         },
     );
 
     commands.insert_resource(ShaderBufferHandle(boxes));
-    commands.insert_resource(SelectionBufferHandle(selection));
     commands.insert_resource(SceneMaterialHandle(material_handle.clone()));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
@@ -69,7 +70,7 @@ fn setup(
 }
 
 fn boxes_to_gpu(
-    boxes: Query<&geometry::BoxGeometry>,
+    boxes: Query<(&geometry::BoxGeometry, Has<selection::Selected>)>,
     buffer_handle: Res<ShaderBufferHandle>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
@@ -77,15 +78,23 @@ fn boxes_to_gpu(
 
     let gpu_data: Vec<GpuBox> = boxes
         .iter()
-        .map(|b| GpuBox {
+        .map(|(b, selected)| GpuBox {
             position: b.position.into(),
             size: b.size,
             color: b.id.to_color(),
-            _padding: 0.0,
+            selected: bool_to_gpu(selected)
         })
         .collect();
 
     buffer.set_data(gpu_data);
+}
+
+fn bool_to_gpu(value: bool) -> u32 {
+    if value {
+        1
+    } else {
+        0
+    } 
 }
 
 fn cursor_position(
@@ -109,7 +118,7 @@ pub struct GpuBox {
     pub position: [f32; 3],
     pub size: f32,
     pub color: [f32; 3],
-    _padding: f32,
+    pub selected: u32,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
@@ -131,9 +140,6 @@ pub struct SceneMaterialHandle(Handle<SceneMaterial>);
 
 #[derive(Resource)]
 pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);
-
-#[derive(Resource)]
-pub struct SelectionBufferHandle(Handle<ShaderStorageBuffer>);
 
 impl ShaderBufferHandle {
     pub fn get_mut<'a>(
