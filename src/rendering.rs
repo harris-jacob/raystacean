@@ -58,6 +58,7 @@ fn setup(
 
     commands.spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)));
 
+
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
