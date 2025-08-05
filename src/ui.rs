@@ -1,10 +1,37 @@
 use bevy::prelude::*;
 
+use crate::controls::{self, ControlMode};
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup);
+        app.add_systems(Update, (select_buttons, update_tool_button_visuals));
+    }
+}
+
+#[derive(Component, Debug, PartialEq, Eq, Clone, Copy)]
+enum Tool {
+    Selection,
+    PlaceGeometry,
+}
+
+impl Into<controls::ControlMode> for Tool {
+    fn into(self) -> controls::ControlMode {
+        match self {
+            Tool::Selection => controls::ControlMode::Select,
+            Tool::PlaceGeometry => controls::ControlMode::PlaceGeometry,
+        }
+    }
+}
+
+impl From<controls::ControlMode> for Tool {
+    fn from(value: controls::ControlMode) -> Self {
+        match value {
+            controls::ControlMode::Select => Tool::Selection,
+            controls::ControlMode::PlaceGeometry => Tool::PlaceGeometry,
+        }
     }
 }
 
@@ -20,45 +47,47 @@ fn setup(mut commands: Commands) {
             ..default()
         },
     ));
-    commands.spawn((
-        container(),
-        children![
-            button("Selection".to_string(), true),
-            button("Box Tool".to_string(), false)
-        ],
-    ));
+    commands.spawn(container()).with_children(|parent| {
+        for &tool in &[Tool::Selection, Tool::PlaceGeometry] {
+            parent.spawn((button(tool, tool == Tool::Selection), tool));
+        }
+    });
 }
 
-fn button_system(
-    mut interaction_query: Query<
-        (
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-            &Children,
-        ),
-        (Changed<Interaction>, With<Button>),
-    >,
-    mut text_query: Query<&mut Text>,
+fn select_buttons(
+    mut interaction_q: Query<(&Interaction, &Tool), Changed<Interaction>>,
+    mut control_mode: ResMut<controls::ControlMode>,
 ) {
-    for (interaction, mut color, mut border_color, children) in &mut interaction_query {
-        let mut text = text_query.get_mut(children[0]).unwrap();
-        match *interaction {
-            Interaction::Pressed => {
-            }
-            Interaction::Hovered => {
-                *color = HOVERED_BUTTON.into();
-                border_color.0 = Color::WHITE;
-            }
-            Interaction::None => {
-                **text = "Button".to_string();
-                *color = NORMAL_BUTTON.into();
-                border_color.0 = Color::BLACK;
+    for (interaction, tool) in interaction_q.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            let intent: ControlMode = (*tool).into();
+            if *control_mode != intent {
+                info!("Tool changed to {:?}", tool);
+                *control_mode = intent;
+            } else {
+                info!("{:?} is already selected", tool);
             }
         }
     }
 }
 
+fn update_tool_button_visuals(
+    control_mode: Res<ControlMode>,
+    buttons: Query<(&Tool, &mut BackgroundColor, &Children)>,
+    mut texts: Query<&mut TextColor>,
+) {
+    for (tool, mut color, chldren) in buttons {
+        let is_selected = *tool == (*control_mode).into();
+        *color = button_color(is_selected);
+
+        // Update text color
+        for child in chldren.iter() {
+            if let Ok(mut text) = texts.get_mut(child) {
+                *text = text_color(is_selected);
+            }
+        }
+    }
+}
 
 fn container() -> Node {
     Node {
@@ -73,7 +102,7 @@ fn container() -> Node {
     }
 }
 
-fn button(text: String, is_active: bool) -> impl Bundle + use<> {
+fn button(tool: Tool, is_active: bool) -> impl Bundle + use<> {
     (
         Button,
         Node {
@@ -90,7 +119,7 @@ fn button(text: String, is_active: bool) -> impl Bundle + use<> {
         BorderRadius::all(Val::Px(5.0)),
         button_color(is_active),
         children![(
-            Text::new(text),
+            Text::new(tool_text(&tool)),
             TextFont {
                 font_size: 18.0,
                 ..default()
@@ -98,6 +127,13 @@ fn button(text: String, is_active: bool) -> impl Bundle + use<> {
             text_color(is_active),
         )],
     )
+}
+
+fn tool_text(tool: &Tool) -> String {
+    match tool {
+        Tool::Selection => "Selection".to_string(),
+        Tool::PlaceGeometry => "Place Box".to_string(),
+    }
 }
 
 fn button_color(is_active: bool) -> BackgroundColor {
