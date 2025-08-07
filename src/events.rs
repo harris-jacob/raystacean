@@ -3,6 +3,9 @@ use bevy::prelude::*;
 #[derive(Event)]
 pub struct PixelColorUnderCursor(Vec3);
 
+#[derive(Event)]
+pub struct PlaneClicked;
+
 impl PixelColorUnderCursor {
     pub fn new(color: Vec3) -> Self {
         Self(color)

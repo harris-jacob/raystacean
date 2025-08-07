@@ -3,16 +3,19 @@ use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use bevy::render::render_resource::{AsBindGroup, BufferUsages, ShaderRef, ShaderType};
 use bevy::render::storage::ShaderStorageBuffer;
 
-use crate::{events, selection};
 use crate::geometry;
+use crate::{events, selection};
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
-            .add_systems(Startup, setup)
-            .add_systems(Update, (boxes_to_gpu, cursor_position));
+        app.add_plugins((
+            MeshPickingPlugin,
+            MaterialPlugin::<SceneMaterial>::default(),
+        ))
+        .add_systems(Startup, setup)
+        .add_systems(Update, (boxes_to_gpu, cursor_position));
     }
 }
 
@@ -56,7 +59,9 @@ fn setup(
         Vec2::new(window.width() * 0.5, window.height() * 0.5),
     )));
 
-    commands.spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)));
+    commands
+        .spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)))
+        .observe(output_click_event);
 
     commands.spawn((
         Camera3d::default(),
@@ -67,6 +72,16 @@ fn setup(
         }),
         GlobalTransform::default(),
     ));
+}
+
+fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) {
+    // TODO: does this belong here?
+    if trigger.button != PointerButton::Primary {
+        return;
+    }
+
+    dbg!("Writing PlaneClicked");
+    commands.trigger(events::PlaneClicked);
 }
 
 fn boxes_to_gpu(
@@ -82,7 +97,7 @@ fn boxes_to_gpu(
             position: b.position.into(),
             size: b.size,
             color: b.id.to_color(),
-            selected: bool_to_gpu(selected)
+            selected: bool_to_gpu(selected),
         })
         .collect();
 
@@ -90,11 +105,7 @@ fn boxes_to_gpu(
 }
 
 fn bool_to_gpu(value: bool) -> u32 {
-    if value {
-        1
-    } else {
-        0
-    } 
+    if value { 1 } else { 0 }
 }
 
 fn cursor_position(

@@ -4,6 +4,7 @@ mod events;
 mod geometry;
 mod rendering;
 mod selection;
+mod ui;
 
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
@@ -11,16 +12,18 @@ use bevy::prelude::*;
 fn main() {
     App::new()
         .add_event::<events::PixelColorUnderCursor>()
+        .add_event::<events::PlaneClicked>()
+        .add_plugins(DefaultPlugins.set(LogPlugin {
+            level: bevy::log::Level::DEBUG,
+            ..default()
+        }))
         .add_plugins((
-            DefaultPlugins.set(LogPlugin {
-                level: bevy::log::Level::DEBUG,
-                ..default()
-            }),
-            rendering::RenderingPlugin,
-            geometry::GeometryPlugin,
             camera::CameraPlugin,
-            selection::SelectionPlugin,
             controls::ControlContextPlugin,
+            geometry::GeometryPlugin,
+            rendering::RenderingPlugin,
+            selection::SelectionPlugin,
+            ui::UiPlugin,
         ))
         .run();
 }
