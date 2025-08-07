@@ -1,13 +1,14 @@
 use bevy::prelude::*;
 
-use crate::{camera, controls};
+use crate::{camera, controls, events};
 
 pub struct GeometryPlugin;
 
 impl Plugin for GeometryPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(GlobalId::default())
-            .add_systems(Update, place_box_system);
+        app.insert_resource(GlobalId::default());
+
+        app.add_observer(place_box);
     }
 }
 
@@ -40,17 +41,15 @@ impl BoxGeometry {
     }
 }
 
-fn place_box_system(
+fn place_box(
+    _trigger: Trigger<events::PlaneClicked>,
     control_mode: Res<controls::ControlMode>,
-    control_intent: Res<controls::ControlIntent>,
     windows: Query<&Window>,
     camera: Res<camera::CameraControls>,
     mut global_id: ResMut<GlobalId>,
     mut commands: Commands,
 ) {
-    if *control_mode != controls::ControlMode::PlaceGeometry
-        || *control_intent != controls::ControlIntent::ContextAction
-    {
+    if *control_mode != controls::ControlMode::PlaceGeometry {
         return;
     }
 

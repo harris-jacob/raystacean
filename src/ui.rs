@@ -49,7 +49,11 @@ fn setup(mut commands: Commands) {
     ));
     commands.spawn(container()).with_children(|parent| {
         for &tool in &[Tool::Selection, Tool::PlaceGeometry] {
-            parent.spawn((button(tool, tool == Tool::Selection), tool));
+            parent
+                .spawn((button(tool, tool == Tool::Selection), tool))
+                .observe(|trigger: Trigger<Pointer<Click>>| {
+                    dbg!("ui element clicked");
+                });
         }
     });
 }
@@ -89,17 +93,20 @@ fn update_tool_button_visuals(
     }
 }
 
-fn container() -> Node {
-    Node {
-        padding: UiRect::all(Val::Px(10.0)),
-        width: Val::Percent(100.0),
-        height: Val::Percent(100.0),
-        flex_direction: FlexDirection::Column,
-        row_gap: Val::Px(10.0),
-        justify_content: JustifyContent::Center,
-        align_items: AlignItems::FlexEnd,
-        ..default()
-    }
+fn container() -> impl Bundle + use<> {
+    (
+        Node {
+            padding: UiRect::all(Val::Px(10.0)),
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(10.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::FlexEnd,
+            ..default()
+        },
+        Pickable::IGNORE,
+    )
 }
 
 fn button(tool: Tool, is_active: bool) -> impl Bundle + use<> {

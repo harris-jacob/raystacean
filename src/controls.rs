@@ -27,6 +27,8 @@ pub enum ControlIntent {
 /// Centralized system for resolving control intent, ensuring that only one user
 /// action is performed at a time. Returns None if the user is not pressing an
 /// actively captured input combination.
+///
+/// TODO: remove this system
 pub fn resolve_control_intent(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,

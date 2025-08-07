@@ -12,11 +12,12 @@ use bevy::prelude::*;
 fn main() {
     App::new()
         .add_event::<events::PixelColorUnderCursor>()
+        .add_event::<events::PlaneClicked>()
+        .add_plugins(DefaultPlugins.set(LogPlugin {
+            level: bevy::log::Level::DEBUG,
+            ..default()
+        }))
         .add_plugins((
-            DefaultPlugins.set(LogPlugin {
-                level: bevy::log::Level::DEBUG,
-                ..default()
-            }),
             camera::CameraPlugin,
             controls::ControlContextPlugin,
             geometry::GeometryPlugin,
