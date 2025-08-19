@@ -1,31 +1,56 @@
+use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
-use bevy::render::render_resource::{AsBindGroup, BufferUsages, ShaderRef, ShaderType};
+use bevy::render::render_resource::{
+    AsBindGroup, BufferUsages, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
+    TextureUsages,
+};
 use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::view::RenderLayers;
 
-use crate::geometry;
+use crate::layers::TEXTURE_CAMERA;
 use crate::{events, selection};
+use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MeshPickingPlugin,
-            MaterialPlugin::<SceneMaterial>::default(),
-        ))
-        .add_systems(Startup, setup)
-        .add_systems(Update, (boxes_to_gpu, cursor_position));
+        app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
+            .add_systems(Startup, setup)
+            .add_systems(Update, (boxes_to_gpu, cursor_position));
     }
 }
 
 fn setup(
-    mut materials: ResMut<Assets<SceneMaterial>>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     window: Single<&Window>,
 ) {
+    let size = Extent3d {
+        width: window.width().round() as u32,
+        height: window.height().round() as u32,
+        ..default()
+    };
+
+    // This is the texture that will be rendered to.
+    let mut image = Image::new_fill(
+        size,
+        TextureDimension::D2,
+        &[0, 0, 0, 0],
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+
+    // You need to set these texture usage flags in order to use the image as a render target
+    image.texture_descriptor.usage =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+
+    let image_handle = images.add(image);
+
     let boxes = buffers.add(ShaderStorageBuffer::default());
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
@@ -60,17 +85,43 @@ fn setup(
     )));
 
     commands
-        .spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)))
+        .spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(material_handle),
+            RenderLayers::layer(layers::SHADER_LAYER),
+        ))
         .observe(output_click_event);
 
+    // Render to texture
     commands.spawn((
         Camera3d::default(),
+        Camera {
+            order: TEXTURE_CAMERA,
+            target: image_handle.clone().into(),
+            clear_color: Color::WHITE.into(),
+            ..default()
+        },
         Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
         Projection::from(OrthographicProjection {
             scale: 1.0,
             ..OrthographicProjection::default_3d()
         }),
         GlobalTransform::default(),
+        RenderLayers::layer(layers::SHADER_LAYER),
+    ));
+
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: layers::SHADER_CAMERA,
+            ..default()
+        },
+        RenderLayers::layer(layers::SHADER_LAYER),
+    ));
+
+    commands.spawn((
+        Sprite::from_image(image_handle),
+        RenderLayers::layer(layers::SHADER_LAYER),
     ));
 }
 
