@@ -12,7 +12,7 @@ impl Plugin for GeometryPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct BoxGeometry {
     pub position: Vec3,
     pub size: f32,

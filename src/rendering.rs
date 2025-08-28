@@ -106,7 +106,6 @@ fn setup(
             scale: 1.0,
             ..OrthographicProjection::default_3d()
         }),
-        GlobalTransform::default(),
         RenderLayers::layer(layers::SHADER_LAYER),
     ));
 

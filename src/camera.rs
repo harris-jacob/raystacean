@@ -21,10 +21,10 @@ impl Plugin for CameraPlugin {
 
 #[derive(Resource, Debug)]
 pub struct CameraControls {
-    target: Vec3,
-    azimuth: f32,
-    distance: f32,
-    elevation: f32,
+    pub target: Vec3,
+    pub azimuth: f32,
+    pub distance: f32,
+    pub elevation: f32,
 }
 
 impl Default for CameraControls {
