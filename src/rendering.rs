@@ -60,7 +60,8 @@ fn setup(
 
     let material_handle = materials.add(SceneMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
-        camera_transform: Mat4::default(),
+        view_to_world: Mat4::default(),
+        clip_to_view: Mat4::default(),
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
@@ -92,7 +93,7 @@ fn setup(
         ))
         .observe(output_click_event);
 
-    // Render to texture
+    // // Render to texture
     commands.spawn((
         Camera3d::default(),
         Camera {
@@ -101,7 +102,7 @@ fn setup(
             clear_color: Color::WHITE.into(),
             ..default()
         },
-        Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 1.0),
         Projection::from(OrthographicProjection {
             scale: 1.0,
             ..OrthographicProjection::default_3d()
@@ -130,7 +131,6 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
         return;
     }
 
-    dbg!("Writing PlaneClicked");
     commands.trigger(events::PlaneClicked);
 }
 
@@ -187,12 +187,14 @@ pub struct SceneMaterial {
     #[uniform(0)]
     aspect_ratio: Vec2,
     #[uniform(1)]
-    pub camera_transform: Mat4,
+    pub view_to_world: Mat4,
     #[uniform(2)]
+    pub clip_to_view: Mat4,
+    #[uniform(3)]
     pub cursor_position: Vec2,
-    #[storage(3, read_only)]
+    #[storage(4, read_only)]
     pub boxes: Handle<ShaderStorageBuffer>,
-    #[storage(4)]
+    #[storage(5)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 

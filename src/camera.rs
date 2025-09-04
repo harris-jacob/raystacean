@@ -1,24 +1,33 @@
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
+use bevy::render::camera::CameraProjection;
+use bevy::render::view::RenderLayers;
 
-use crate::{controls, rendering};
+use crate::{controls, layers, rendering};
 
 pub struct CameraPlugin;
 
+#[derive(Debug, Component)]
+pub struct MainCamera;
+
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(CameraControls::default()).add_systems(
-            Update,
-            (
-                orbit_camera_input,
-                zoom_camera_input,
-                pan_camera_input,
-                update_material_transform,
-            ),
-        );
+        app.insert_resource(CameraControls::default())
+            .add_systems(Startup, setup)
+            .add_systems(
+                Update,
+                (
+                    orbit_camera_input,
+                    zoom_camera_input,
+                    pan_camera_input,
+                    update_material_transform,
+                    update_main_camera,
+                ),
+            );
     }
 }
 
+// TODO: keep this internal
 #[derive(Resource, Debug)]
 pub struct CameraControls {
     pub target: Vec3,
@@ -39,7 +48,7 @@ impl Default for CameraControls {
 }
 
 impl CameraControls {
-    pub fn transform(&self) -> Mat4 {
+    pub fn view_matrix(&self) -> Mat4 {
         let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
 
         let camera_offset = rotation * Vec3::new(0.0, 0.0, self.distance);
@@ -47,6 +56,35 @@ impl CameraControls {
 
         Mat4::look_at_lh(camera_position, self.target, Vec3::Y)
     }
+
+    pub fn transform(&self) -> Transform {
+        let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
+        let camera_offset = rotation * Vec3::new(0.0, 0.0, self.distance);
+        let camera_position = self.target + camera_offset;
+
+        Transform::from_translation(camera_position).looking_at(self.target, Vec3::Y)
+    }
+}
+
+fn setup(mut commands: Commands, mut config_store: ResMut<GizmoConfigStore>) {
+    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
+    config.render_layers = RenderLayers::layer(layers::GIZMOS_LAYER);
+
+    commands.spawn((
+        MainCamera,
+        Camera3d::default(),
+        Camera {
+            order: layers::GIZMOS_CAMERA,
+            ..default()
+        },
+        Projection::from(PerspectiveProjection {
+            fov: std::f32::consts::FRAC_PI_2,
+            aspect_ratio: 16.0 / 9.0,
+            near: 0.1,
+            far: 1000.0,
+        }),
+        RenderLayers::layer(layers::GIZMOS_LAYER),
+    ));
 }
 
 fn orbit_camera_input(
@@ -104,12 +142,24 @@ fn pan_camera_input(
     camera.target += pan_right - pan_forward;
 }
 
+fn update_main_camera(
+    controls: ResMut<CameraControls>,
+    mut query: Query<(&MainCamera, &mut Transform)>,
+) {
+    let (_, mut camera_transform) = query.single_mut().expect("should be one main camera");
+
+    *camera_transform = controls.transform();
+}
+
 fn update_material_transform(
-    camera: ResMut<CameraControls>,
+    query: Query<(&Transform, &Projection), With<MainCamera>>,
+    controls: ResMut<CameraControls>,
     material_handle: ResMut<rendering::SceneMaterialHandle>,
     mut materials: ResMut<Assets<rendering::SceneMaterial>>,
 ) {
     let material = material_handle.get_mut(&mut materials);
+    let (camera_transform, projection) = query.single().expect("should be one main camera");
 
-    material.camera_transform = camera.transform().inverse();
+    material.view_to_world = controls.view_matrix().inverse();
+    material.clip_to_view = projection.get_clip_from_view().inverse();
 }

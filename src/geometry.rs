@@ -66,7 +66,7 @@ fn place_box(
 
     let ray_dir_camera_space = Vec3::new(pixel_coords.x, pixel_coords.y, 1.0).normalize();
 
-    let camera_inv = camera.transform().inverse();
+    let camera_inv = camera.view_matrix().inverse();
 
     let ray_dir = (camera_inv * ray_dir_camera_space.extend(0.0))
         .truncate()

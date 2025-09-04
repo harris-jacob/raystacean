@@ -56,5 +56,5 @@ fn is_orbitting(mouse: &ButtonInput<MouseButton>, keys: &ButtonInput<KeyCode>) -
 fn is_panning(mouse: &ButtonInput<MouseButton>, keys: &ButtonInput<KeyCode>) -> bool {
     let shift_down = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
 
-    (shift_down && mouse.pressed(MouseButton::Right)) || mouse.pressed(MouseButton::Middle)
+    (shift_down && mouse.pressed(MouseButton::Left)) || mouse.pressed(MouseButton::Middle)
 }
