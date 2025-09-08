@@ -1,4 +1,4 @@
-use crate::geometry;
+use crate::{geometry, selection};
 use bevy::prelude::*;
 
 pub struct GizmosPlugin;
@@ -10,10 +10,11 @@ impl Plugin for GizmosPlugin {
 }
 
 // Draw a coordinate system for every box
-fn draw_coordinate_system(boxes: Query<&geometry::BoxGeometry>, mut gizmos: Gizmos) {
-    gizmos.axes(Transform::default(), 10.0);
-
+fn draw_coordinate_system(
+    boxes: Query<&geometry::BoxGeometry, With<selection::Selected>>,
+    mut gizmos: Gizmos,
+) {
     for b in boxes {
-        gizmos.axes(Transform::from_translation(-b.position), 1.0);
+        gizmos.axes(Transform::from_translation(b.position), 2.0);
     }
 }

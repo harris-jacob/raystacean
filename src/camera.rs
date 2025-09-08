@@ -51,7 +51,7 @@ impl CameraControls {
     pub fn view_matrix(&self) -> Mat4 {
         let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
 
-        let camera_offset = rotation * Vec3::new(0.0, 0.0, self.distance);
+        let camera_offset = rotation * Vec3::new(0.0, 0.0, -self.distance);
         let camera_position = self.target + camera_offset;
 
         Mat4::look_at_lh(camera_position, self.target, Vec3::Y)
@@ -59,7 +59,7 @@ impl CameraControls {
 
     pub fn transform(&self) -> Transform {
         let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
-        let camera_offset = rotation * Vec3::new(0.0, 0.0, self.distance);
+        let camera_offset = rotation * Vec3::new(0.0, 0.0, -self.distance);
         let camera_position = self.target + camera_offset;
 
         Transform::from_translation(camera_position).looking_at(self.target, Vec3::Y)
@@ -139,7 +139,7 @@ fn pan_camera_input(
     let pan_right = yaw * Vec3::X * delta.x * sensitivity;
     let pan_forward = yaw * Vec3::Z * delta.y * sensitivity;
 
-    camera.target += pan_right - pan_forward;
+    camera.target += pan_right + pan_forward;
 }
 
 fn update_main_camera(

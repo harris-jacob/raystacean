@@ -76,8 +76,6 @@ fn map(p: vec3<f32>) -> SdfResult {
         sdf = min_sdf(sdf, b);
     }
 
-    sdf = min_sdf(sdf, sd_box(p, vec3<f32>(1.0), RED));
-
     return sdf;
 }
 
@@ -143,7 +141,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 3. Ray in view space
     let ray_origin_view = vec3<f32>(0.0, 0.0, 0.0);
-    let ray_dir_view = normalize(vec3<f32>(view_pos.x, view_pos.y, view_pos.z));
+    let ray_dir_view = normalize(view_pos);
 
     // 4. Transform into world space
     let ray_origin_world = (view_to_world * vec4<f32>(ray_origin_view, 1.0)).xyz;
@@ -151,6 +149,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 5. March in world space
     let color = ray_march(ray_origin_world, ray_dir_world);
+
+
+    if distance(ndc.xy, cursor_position) < 0.005 {
+        selection[0] = color.x;
+        selection[1] = color.y;
+        selection[2] = color.z;
+    }
 
 
     return vec4<f32>(color, 1.0);
