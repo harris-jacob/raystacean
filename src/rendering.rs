@@ -91,7 +91,6 @@ fn setup(
         ))
         .observe(output_click_event);
 
-    // // Render to texture
     commands.spawn((
         Camera3d::default(),
         Camera {
