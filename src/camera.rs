@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use bevy::render::camera::CameraProjection;
 use bevy::render::view::RenderLayers;
 
+use crate::transform_ext::CameraViewMatrix;
 use crate::{controls, layers, rendering};
 
 pub struct CameraPlugin;
@@ -27,13 +28,12 @@ impl Plugin for CameraPlugin {
     }
 }
 
-// TODO: keep this internal
 #[derive(Resource, Debug)]
-pub struct CameraControls {
-    pub target: Vec3,
-    pub azimuth: f32,
-    pub distance: f32,
-    pub elevation: f32,
+struct CameraControls {
+    target: Vec3,
+    azimuth: f32,
+    distance: f32,
+    elevation: f32,
 }
 
 impl Default for CameraControls {
@@ -48,15 +48,6 @@ impl Default for CameraControls {
 }
 
 impl CameraControls {
-    pub fn view_matrix(&self) -> Mat4 {
-        let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
-
-        let camera_offset = rotation * Vec3::new(0.0, 0.0, -self.distance);
-        let camera_position = self.target + camera_offset;
-
-        Mat4::look_at_lh(camera_position, self.target, Vec3::Y)
-    }
-
     pub fn transform(&self) -> Transform {
         let rotation = Quat::from_euler(EulerRot::YXZ, self.azimuth, self.elevation, 0.0);
         let camera_offset = rotation * Vec3::new(0.0, 0.0, -self.distance);
@@ -153,13 +144,12 @@ fn update_main_camera(
 
 fn update_material_transform(
     query: Query<(&Transform, &Projection), With<MainCamera>>,
-    controls: ResMut<CameraControls>,
     material_handle: ResMut<rendering::SceneMaterialHandle>,
     mut materials: ResMut<Assets<rendering::SceneMaterial>>,
 ) {
     let material = material_handle.get_mut(&mut materials);
     let (camera_transform, projection) = query.single().expect("should be one main camera");
 
-    material.view_to_world = controls.view_matrix().inverse();
+    material.view_to_world = camera_transform.view_matrix().inverse();
     material.clip_to_view = projection.get_clip_from_view().inverse();
 }

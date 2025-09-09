@@ -7,6 +7,7 @@ mod layers;
 mod rendering;
 mod selection;
 mod ui;
+mod transform_ext;
 
 use bevy::log::LogPlugin;
 use bevy::prelude::*;

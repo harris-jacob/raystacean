@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::camera::CameraProjection};
 
-use crate::{camera, controls, events};
+use crate::{camera, controls, events, transform_ext::CameraViewMatrix};
 
 pub struct GeometryPlugin;
 
@@ -45,8 +45,7 @@ fn place_box(
     _trigger: Trigger<events::PlaneClicked>,
     control_mode: Res<controls::ControlMode>,
     windows: Query<&Window>,
-    projection: Query<&Projection, With<camera::MainCamera>>,
-    camera: Res<camera::CameraControls>,
+    camera: Query<(&Projection, &Transform), With<camera::MainCamera>>,
     mut global_id: ResMut<GlobalId>,
     mut commands: Commands,
 ) {
@@ -55,13 +54,13 @@ fn place_box(
     }
 
     let window = windows.single().expect("single");
-    let projection = projection.single().expect("single");
+    let (projection, transform) = camera.single().expect("single");
 
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
 
-    if let Some(hit) = cast_ray_at_ground_in_scene(cursor_pos, &camera, projection, window) {
+    if let Some(hit) = cast_ray_at_ground_in_scene(cursor_pos, projection, transform, window) {
         // sit the box on the plane rather than putting the center on it
         commands.spawn(BoxGeometry::new(hit.with_y(1.0), global_id.next()));
     };
@@ -101,8 +100,8 @@ impl GeometryId {
 // if there is no intersection (e.g.) ray direction points away from ground plane.
 fn cast_ray_at_ground_in_scene(
     screen_space_position: Vec2,
-    controls: &camera::CameraControls,
     projection: &Projection,
+    camera_transform: &Transform,
     window: &Window,
 ) -> Option<Vec3> {
     let screen_size = window.size();
@@ -119,9 +118,9 @@ fn cast_ray_at_ground_in_scene(
     let ray_dir_view = view_pos.normalize().extend(0.0);
 
     // 4. View -> world
-    let ray_origin_world = (controls.view_matrix().inverse() * ray_origin_view).xyz();
+    let ray_origin_world = (camera_transform.view_matrix().inverse() * ray_origin_view).xyz();
 
-    let ray_dir_world = (controls.view_matrix().inverse() * ray_dir_view)
+    let ray_dir_world = (camera_transform.view_matrix().inverse() * ray_dir_view)
         .normalize()
         .xyz();
 
