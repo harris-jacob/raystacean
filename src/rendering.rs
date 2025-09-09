@@ -36,7 +36,6 @@ fn setup(
         ..default()
     };
 
-    // This is the texture that will be rendered to.
     let mut image = Image::new_fill(
         size,
         TextureDimension::D2,
@@ -45,7 +44,6 @@ fn setup(
         RenderAssetUsages::default(),
     );
 
-    // You need to set these texture usage flags in order to use the image as a render target
     image.texture_descriptor.usage =
         TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
 
