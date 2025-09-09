@@ -1,31 +1,54 @@
+use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
-use bevy::render::render_resource::{AsBindGroup, BufferUsages, ShaderRef, ShaderType};
+use bevy::render::render_resource::{
+    AsBindGroup, BufferUsages, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
+    TextureUsages,
+};
 use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::view::RenderLayers;
 
-use crate::geometry;
+use crate::layers::TEXTURE_CAMERA;
 use crate::{events, selection};
+use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MeshPickingPlugin,
-            MaterialPlugin::<SceneMaterial>::default(),
-        ))
-        .add_systems(Startup, setup)
-        .add_systems(Update, (boxes_to_gpu, cursor_position));
+        app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
+            .add_systems(Startup, setup)
+            .add_systems(Update, (boxes_to_gpu, cursor_position));
     }
 }
 
 fn setup(
-    mut materials: ResMut<Assets<SceneMaterial>>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     window: Single<&Window>,
 ) {
+    let size = Extent3d {
+        width: window.width().round() as u32,
+        height: window.height().round() as u32,
+        ..default()
+    };
+
+    let mut image = Image::new_fill(
+        size,
+        TextureDimension::D2,
+        &[0, 0, 0, 0],
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+
+    image.texture_descriptor.usage =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+
+    let image_handle = images.add(image);
+
     let boxes = buffers.add(ShaderStorageBuffer::default());
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
@@ -35,7 +58,8 @@ fn setup(
 
     let material_handle = materials.add(SceneMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
-        camera_transform: Mat4::default(),
+        view_to_world: Mat4::default(),
+        clip_to_view: Mat4::default(),
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
@@ -60,17 +84,41 @@ fn setup(
     )));
 
     commands
-        .spawn((Mesh3d(mesh), MeshMaterial3d(material_handle)))
+        .spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(material_handle),
+            RenderLayers::layer(layers::SHADER_LAYER),
+        ))
         .observe(output_click_event);
 
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Camera {
+            order: TEXTURE_CAMERA,
+            target: image_handle.clone().into(),
+            clear_color: Color::WHITE.into(),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, 1.0),
         Projection::from(OrthographicProjection {
             scale: 1.0,
             ..OrthographicProjection::default_3d()
         }),
-        GlobalTransform::default(),
+        RenderLayers::layer(layers::SHADER_LAYER),
+    ));
+
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: layers::SHADER_CAMERA,
+            ..default()
+        },
+        RenderLayers::layer(layers::SHADER_LAYER),
+    ));
+
+    commands.spawn((
+        Sprite::from_image(image_handle),
+        RenderLayers::layer(layers::SHADER_LAYER),
     ));
 }
 
@@ -80,7 +128,6 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
         return;
     }
 
-    dbg!("Writing PlaneClicked");
     commands.trigger(events::PlaneClicked);
 }
 
@@ -120,7 +167,11 @@ fn cursor_position(
         return;
     };
 
-    scene_material.cursor_position = cursor_pos;
+    // Cursor position to ndc
+    scene_material.cursor_position = Vec2::new(
+        cursor_pos.x / window.width() * 2.0 - 1.0,
+        1.0 - (cursor_pos.y / window.height() * 2.0),
+    );
 }
 
 #[repr(C)]
@@ -137,12 +188,14 @@ pub struct SceneMaterial {
     #[uniform(0)]
     aspect_ratio: Vec2,
     #[uniform(1)]
-    pub camera_transform: Mat4,
+    pub view_to_world: Mat4,
     #[uniform(2)]
+    pub clip_to_view: Mat4,
+    #[uniform(3)]
     pub cursor_position: Vec2,
-    #[storage(3, read_only)]
+    #[storage(4, read_only)]
     pub boxes: Handle<ShaderStorageBuffer>,
-    #[storage(4)]
+    #[storage(5)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 

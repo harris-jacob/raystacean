@@ -1,4 +1,3 @@
-#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
 #import bevy_pbr::forward_io::VertexOutput
 
 const MAX_STEPS: i32 = 100;
@@ -20,12 +19,14 @@ struct GpuBox {
 @group(2) @binding(0)
 var<uniform> aspect_ratio: vec2<f32>;
 @group(2) @binding(1)
-var<uniform> camera_transform: mat4x4<f32>;
+var<uniform> view_to_world: mat4x4<f32>;
 @group(2) @binding(2)
-var<uniform> cursor_position: vec2<f32>;
+var<uniform> clip_to_view: mat4x4<f32>;
 @group(2) @binding(3)
-var<storage, read> boxes: array<GpuBox>;
+var<uniform> cursor_position: vec2<f32>;
 @group(2) @binding(4)
+var<storage, read> boxes: array<GpuBox>;
+@group(2) @binding(5)
 var<storage, read_write> selection: array<f32>;
 
 fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
@@ -51,7 +52,7 @@ fn sd_box_frame(in: vec3<f32>, b: vec3<f32>, e: f32, color: vec3<f32>) -> SdfRes
 }
 
 fn sd_ground(p: vec3<f32>) -> SdfResult {
-  return SdfResult(-p.y, WHITE);
+  return SdfResult(p.y, WHITE);
 }
 
 struct SdfResult {
@@ -106,9 +107,7 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
 
     for (var i = 0; i < MAX_STEPS; i++) {
         var pos = cameraOrigin + dist * cameraDir;
-        var transformed = camera_transform * vec4(pos, 1.0);
-
-        let result = map(transformed.xyz / transformed.w);
+        let result = map(pos);
 
         // Hit something
         if(result.dist < HIT_THRESHOLD) {
@@ -126,24 +125,41 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(0.0);
 }
 
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    let pixel_coords = (in.uv - 0.5) * aspect_ratio;
-    let ray_dir = normalize(vec3<f32>(pixel_coords * 2 / aspect_ratio.y, 1.0));
-    let ray_origin = vec3(0.0, 0.0, 0.0);
+    // 1. UV → NDC
+    let ndc = vec4<f32>(
+        in.uv * 2.0 - vec2<f32>(1.0, 1.0),
+        -1.0,
+        1.0
+    );
 
-    let color = ray_march(ray_origin, ray_dir);
+    // 2. NDC → view space
+    let view_pos_h = clip_to_view * ndc;
+    let view_pos   = view_pos_h.xyz / view_pos_h.w;
 
-    let cursor_position_ndc = (cursor_position / aspect_ratio - 0.5) * aspect_ratio;
+    // 3. Ray in view space
+    let ray_origin_view = vec3<f32>(0.0, 0.0, 0.0);
+    let ray_dir_view = normalize(view_pos);
+
+    // 4. Transform into world space
+    let ray_origin_world = (view_to_world * vec4<f32>(ray_origin_view, 1.0)).xyz;
+    let ray_dir_world    = normalize((view_to_world * vec4<f32>(ray_dir_view, 0.0)).xyz);
+
+    // 5. March in world space
+    let color = ray_march(ray_origin_world, ray_dir_world);
 
 
-    if distance(pixel_coords, cursor_position_ndc) < 0.5 {
+    if distance(ndc.xy, cursor_position) < 0.005 {
         selection[0] = color.x;
         selection[1] = color.y;
         selection[2] = color.z;
     }
 
+
     return vec4<f32>(color, 1.0);
+
 }
 
 fn remap(x: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) -> f32 {

@@ -1,6 +1,6 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, render::camera::CameraProjection};
 
-use crate::{camera, controls, events};
+use crate::{camera, controls, events, transform_ext::CameraViewMatrix};
 
 pub struct GeometryPlugin;
 
@@ -12,7 +12,7 @@ impl Plugin for GeometryPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct BoxGeometry {
     pub position: Vec3,
     pub size: f32,
@@ -45,7 +45,7 @@ fn place_box(
     _trigger: Trigger<events::PlaneClicked>,
     control_mode: Res<controls::ControlMode>,
     windows: Query<&Window>,
-    camera: Res<camera::CameraControls>,
+    camera: Query<(&Projection, &Transform), With<camera::MainCamera>>,
     mut global_id: ResMut<GlobalId>,
     mut commands: Commands,
 ) {
@@ -54,38 +54,16 @@ fn place_box(
     }
 
     let window = windows.single().expect("single");
+    let (projection, transform) = camera.single().expect("single");
 
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
 
-    // TODO: tidy this math up and write some comments
-    let screen_size = window.size();
-    let ndc = (cursor_pos / screen_size) * 2.0 - Vec2::ONE;
-    let pixel_coords = ndc * Vec2::new(window.width() / window.height(), 1.0);
-
-    let ray_dir_camera_space = Vec3::new(pixel_coords.x, pixel_coords.y, 1.0).normalize();
-
-    let camera_inv = camera.transform().inverse();
-
-    let ray_dir = (camera_inv * ray_dir_camera_space.extend(0.0))
-        .truncate()
-        .normalize();
-    let ray_origin = (camera_inv * Vec4::new(0.0, 0.0, 0.0, 1.0)).truncate();
-
-    // Intersect with ground plane (Y=0)
-    let t = -ray_origin.y / ray_dir.y;
-
-    if t < 0.0 {
-        return;
-    }
-
-    let mut hit = ray_origin + ray_dir * t;
-
-    // sit the box on the plane rather than putting the center on it
-    hit.y -= 1.0;
-
-    commands.spawn(BoxGeometry::new(hit, global_id.next()));
+    if let Some(hit) = cast_ray_at_ground_in_scene(cursor_pos, projection, transform, window) {
+        // sit the box on the plane rather than putting the center on it
+        commands.spawn(BoxGeometry::new(hit.with_y(1.0), global_id.next()));
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,6 +93,47 @@ impl GeometryId {
 
         Self(id)
     }
+}
+
+// Given a 2d screen space position, fire a ray into the scene along the camera
+// axis and find the intersection with the ground plane (Y=0). Returns `None`
+// if there is no intersection (e.g.) ray direction points away from ground plane.
+fn cast_ray_at_ground_in_scene(
+    screen_space_position: Vec2,
+    projection: &Projection,
+    camera_transform: &Transform,
+    window: &Window,
+) -> Option<Vec3> {
+    let screen_size = window.size();
+
+    let ndc = (screen_space_position / screen_size) * 2.0 - Vec2::ONE;
+    let ndc = Vec4::new(ndc.x, ndc.y, -1.0, 1.0);
+
+    // 2. NDC → view space
+    let view_pos_h = projection.get_clip_from_view().inverse() * ndc;
+    let view_pos = view_pos_h.xyz() / view_pos_h.w;
+
+    // Ray in view space
+    let ray_origin_view = Vec4::default().with_w(1.0);
+    let ray_dir_view = view_pos.normalize().extend(0.0);
+
+    // 4. View -> world
+    let ray_origin_world = (camera_transform.view_matrix().inverse() * ray_origin_view).xyz();
+
+    let ray_dir_world = (camera_transform.view_matrix().inverse() * ray_dir_view)
+        .normalize()
+        .xyz();
+
+    // Solve for t value that intersects XZ plane (Y=0)
+    let t = -ray_origin_world.y / ray_dir_world.y;
+
+    // Intersection point is behind origin
+    if t < 0.0 {
+        return None;
+    }
+
+    // Substitute back into ray eqn
+    Some(ray_origin_world + ray_dir_world * t)
 }
 
 const MODULUS: u32 = 1 << 24;

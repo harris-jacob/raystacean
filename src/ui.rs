@@ -1,6 +1,9 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, render::view::RenderLayers};
 
-use crate::controls::{self, ControlMode};
+use crate::{
+    controls::{self, ControlMode},
+    layers,
+};
 
 pub struct UiPlugin;
 
@@ -43,9 +46,10 @@ fn setup(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Camera {
-            order: 1,
+            order: layers::UI_CAMERA,
             ..default()
         },
+        RenderLayers::layer(layers::UI_LAYER),
     ));
     commands.spawn(container()).with_children(|parent| {
         for &tool in &[Tool::Selection, Tool::PlaceGeometry] {
@@ -106,6 +110,7 @@ fn container() -> impl Bundle + use<> {
             ..default()
         },
         Pickable::IGNORE,
+        RenderLayers::layer(layers::UI_LAYER),
     )
 }
 
@@ -133,6 +138,7 @@ fn button(tool: Tool, is_active: bool) -> impl Bundle + use<> {
             },
             text_color(is_active),
         )],
+        RenderLayers::layer(layers::UI_LAYER),
     )
 }
 
