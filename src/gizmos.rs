@@ -9,7 +9,7 @@ impl Plugin for GizmosPlugin {
     }
 }
 
-// Draw a coordinate system for every box
+// Draw a coordinate system for the selected box
 fn draw_coordinate_system(
     boxes: Query<&geometry::BoxGeometry, With<selection::Selected>>,
     mut gizmos: Gizmos,
