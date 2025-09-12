@@ -40,7 +40,6 @@ impl From<controls::ControlMode> for Tool {
 
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const ACTIVE_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
-const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 
 fn setup(mut commands: Commands) {
     commands.spawn((
@@ -53,11 +52,7 @@ fn setup(mut commands: Commands) {
     ));
     commands.spawn(container()).with_children(|parent| {
         for &tool in &[Tool::Selection, Tool::PlaceGeometry] {
-            parent
-                .spawn((button(tool, tool == Tool::Selection), tool))
-                .observe(|trigger: Trigger<Pointer<Click>>| {
-                    dbg!("ui element clicked");
-                });
+            parent.spawn((button(tool, tool == Tool::Selection), tool));
         }
     });
 }

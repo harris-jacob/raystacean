@@ -1,6 +1,6 @@
 use crate::{events, geometry, layers, selection};
 use bevy::color::palettes::css::{BLUE, GREEN, RED};
-use bevy::ecs::relationship::{RelatedSpawnerCommands, Relationship};
+use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use bevy::render::view::RenderLayers;
 
@@ -84,17 +84,12 @@ fn setup_origin_gizmo(
 fn make_drag_origin(
     axis: Axis,
 ) -> impl Fn(Trigger<Pointer<Drag>>, EventWriter<events::OriginDragged>) {
-    return move |drag: Trigger<Pointer<Drag>>,
-                 mut event_writer: EventWriter<events::OriginDragged>| {
+    move |drag: Trigger<Pointer<Drag>>, mut event_writer: EventWriter<events::OriginDragged>| {
         event_writer.write(events::OriginDragged {
-            delta: drag.delta.length(),
-            axis: match axis {
-                Axis::X => Vec3::X,
-                Axis::Y => Vec3::Y,
-                Axis::Z => Vec3::Z,
-            },
+            delta: drag.delta,
+            axis: axis.to_vec(),
         });
-    };
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -102,6 +97,16 @@ enum Axis {
     X,
     Y,
     Z,
+}
+
+impl Axis {
+    fn to_vec(self) -> Vec3 {
+        match self {
+            Axis::X => Vec3::X,
+            Axis::Y => Vec3::Y,
+            Axis::Z => Vec3::Z,
+        }
+    }
 }
 
 fn draw_origin_axis(

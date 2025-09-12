@@ -9,13 +9,7 @@ pub struct PlaneClicked;
 #[derive(Event, Debug)]
 pub struct OriginDragged {
     pub axis: Vec3,
-    pub delta: f32,
-}
-
-impl OriginDragged {
-    pub fn new(axis: Vec3, delta: f32) -> Self {
-        Self { axis, delta }
-    }
+    pub delta: Vec2,
 }
 
 impl PixelColorUnderCursor {
