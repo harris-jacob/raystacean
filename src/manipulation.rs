@@ -30,6 +30,9 @@ fn apply_drag_to_selection(
     }
 }
 
+/// Projects the drag axis into screen space and projects onto the mouse_delta
+/// (dot product) to find a signed scalar which represents the magnitude of
+/// a drag along an axis.
 fn axis_drag_scalar(
     camera: &Camera,
     cam_transform: &GlobalTransform,
@@ -37,13 +40,13 @@ fn axis_drag_scalar(
     axis: Vec3,
     mouse_delta: Vec2,
 ) -> Option<f32> {
-    // project axis to screen space
     let screen_obj = camera.world_to_viewport(cam_transform, obj_pos).ok()?;
     let screen_axis_pt = camera
         .world_to_viewport(cam_transform, obj_pos + axis)
         .ok()?;
 
     let axis_2d = (screen_axis_pt - screen_obj).trunc();
+    
     if axis_2d.length_squared() < 1e-6 {
         return None;
     }
