@@ -20,7 +20,6 @@ pub enum ControlMode {
 pub enum ControlIntent {
     Panning,
     Orbitting,
-    ContextAction,
     None,
 }
 
@@ -38,8 +37,6 @@ pub fn resolve_control_intent(
         ControlIntent::Orbitting
     } else if is_panning(&mouse, &keys) {
         ControlIntent::Panning
-    } else if mouse.pressed(MouseButton::Left) {
-        ControlIntent::ContextAction
     } else {
         ControlIntent::None
     };

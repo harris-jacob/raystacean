@@ -170,7 +170,7 @@ fn cursor_position(
     // Cursor position to ndc
     scene_material.cursor_position = Vec2::new(
         cursor_pos.x / window.width() * 2.0 - 1.0,
-        1.0 - (cursor_pos.y / window.height() * 2.0),
+        (cursor_pos.y / window.height() * 2.0) - 1.0,
     );
 }
 

@@ -4,10 +4,11 @@ mod events;
 mod geometry;
 mod gizmos;
 mod layers;
+mod manipulation;
 mod rendering;
 mod selection;
-mod ui;
 mod transform_ext;
+mod ui;
 
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
@@ -16,6 +17,7 @@ fn main() {
     App::new()
         .add_event::<events::PixelColorUnderCursor>()
         .add_event::<events::PlaneClicked>()
+        .add_event::<events::OriginDragged>()
         .add_plugins(DefaultPlugins.set(LogPlugin {
             level: bevy::log::Level::DEBUG,
             ..default()
@@ -29,6 +31,7 @@ fn main() {
             rendering::RenderingPlugin,
             selection::SelectionPlugin,
             ui::UiPlugin,
+            manipulation::ManipulationPlugin,
         ))
         .run();
 }

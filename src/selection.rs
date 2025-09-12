@@ -9,21 +9,19 @@ pub struct Selected;
 
 impl Plugin for SelectionPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.add_systems(Update, box_selection);
+        app.add_observer(box_selection);
     }
 }
 
 fn box_selection(
+    _trigger: Trigger<events::PlaneClicked>,
     control_mode: Res<controls::ControlMode>,
-    control_intent: Res<controls::ControlIntent>,
     selected: Query<Entity, With<Selected>>,
     boxes: Query<(Entity, &geometry::BoxGeometry)>,
     mut ev: EventReader<events::PixelColorUnderCursor>,
     mut commands: Commands,
 ) {
-    if *control_mode != controls::ControlMode::Select
-        || *control_intent != controls::ControlIntent::ContextAction
-    {
+    if *control_mode != controls::ControlMode::Select {
         return;
     }
 
