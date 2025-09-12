@@ -11,9 +11,6 @@ pub struct Origin;
 
 impl Plugin for GizmosPlugin {
     fn build(&self, app: &mut App) {
-        let x = &mut 5;
-        let y = x; // if `x` were implicitly mutable, then so would `y`!
-        *y = 10; // surprise, `x` was mutated too!h
         app.add_systems(Startup, setup_origin_gizmo);
         app.add_systems(Update, draw_coordinate_system);
     }
