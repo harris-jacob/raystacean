@@ -150,8 +150,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // 5. March in world space
     let color = ray_march(ray_origin_world, ray_dir_world);
 
-
-    if distance(ndc.xy, cursor_position) < 0.005 {
+    if distance(ndc.xy, cursor_position) < 0.001 {
         selection[0] = color.x;
         selection[1] = color.y;
         selection[2] = color.z;

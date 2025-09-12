@@ -1,5 +1,6 @@
-use crate::{geometry, layers, selection};
+use crate::{events, geometry, layers, selection};
 use bevy::color::palettes::css::{BLUE, GREEN, RED};
+use bevy::ecs::relationship::{RelatedSpawnerCommands, Relationship};
 use bevy::prelude::*;
 use bevy::render::view::RenderLayers;
 
@@ -38,14 +39,6 @@ fn setup_origin_gizmo(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let mut arrow_color = |c: Color| {
-        materials.add(StandardMaterial {
-            base_color: c,
-            unlit: true,
-            ..default()
-        })
-    };
-
     let line_mesh = meshes.add(Mesh::from(Cylinder {
         radius: 0.05,
         half_height: 1.0,
@@ -56,7 +49,6 @@ fn setup_origin_gizmo(
         height: 0.5,
     }));
 
-    // X axis
     commands
         .spawn((
             Transform::default(),
@@ -65,53 +57,99 @@ fn setup_origin_gizmo(
             RenderLayers::layer(layers::GIZMOS_LAYER),
         ))
         .with_children(|parent| {
-            // X axis
-            parent.spawn((
-                Mesh3d(line_mesh.clone()),
-                Transform::from_translation(Vec3::X)
-                    .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2)),
-                MeshMaterial3d(arrow_color(RED.into())),
-                RenderLayers::layer(layers::GIZMOS_LAYER),
-            ));
-
-            parent.spawn((
-                Mesh3d(cone_mesh.clone()),
-                Transform::from_translation(Vec3::X * 2.0)
-                    .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2)),
-                MeshMaterial3d(arrow_color(RED.into())),
-                RenderLayers::layer(layers::GIZMOS_LAYER),
-            ));
-
-            // Y axis
-            parent.spawn((
-                Mesh3d(line_mesh.clone()),
-                Transform::from_translation(Vec3::Y),
-                MeshMaterial3d(arrow_color(GREEN.into())),
-                RenderLayers::layer(layers::GIZMOS_LAYER),
-            ));
-
-            parent.spawn((
-                Mesh3d(cone_mesh.clone()),
-                Transform::from_translation(Vec3::Y * 2.0),
-                MeshMaterial3d(arrow_color(GREEN.into())),
-                RenderLayers::layer(layers::GIZMOS_LAYER),
-            ));
-
-            // Z axis
-            parent.spawn((
-                Mesh3d(line_mesh),
-                Transform::from_translation(Vec3::Z)
-                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
-                MeshMaterial3d(arrow_color(BLUE.into())),
-                RenderLayers::layer(layers::GIZMOS_LAYER),
-            ));
-
-            parent.spawn((
-                Mesh3d(cone_mesh),
-                Transform::from_translation(Vec3::Z * 2.0)
-                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
-                MeshMaterial3d(arrow_color(BLUE.into())),
-                RenderLayers::layer(layers::GIZMOS_LAYER),
-            ));
+            draw_origin_axis(
+                parent,
+                &mut materials,
+                line_mesh.clone(),
+                cone_mesh.clone(),
+                Axis::X,
+            );
+            draw_origin_axis(
+                parent,
+                &mut materials,
+                line_mesh.clone(),
+                cone_mesh.clone(),
+                Axis::Y,
+            );
+            draw_origin_axis(
+                parent,
+                &mut materials,
+                line_mesh.clone(),
+                cone_mesh.clone(),
+                Axis::Z,
+            );
         });
+}
+
+fn make_drag_origin(
+    axis: Axis,
+) -> impl Fn(Trigger<Pointer<Drag>>, EventWriter<events::OriginDragged>) {
+    return move |drag: Trigger<Pointer<Drag>>,
+                 mut event_writer: EventWriter<events::OriginDragged>| {
+        event_writer.write(events::OriginDragged {
+            delta: drag.delta.length(),
+            axis: match axis {
+                Axis::X => Vec3::X,
+                Axis::Y => Vec3::Y,
+                Axis::Z => Vec3::Z,
+            },
+        });
+    };
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+fn draw_origin_axis(
+    commands: &mut RelatedSpawnerCommands<ChildOf>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    line_mesh: Handle<Mesh>,
+    cone_mesh: Handle<Mesh>,
+    axis: Axis,
+) {
+    let material_handle = materials.add(StandardMaterial {
+        base_color: color_for_axis(axis),
+        unlit: true,
+        ..default()
+    });
+
+    let base_transform = transform_for_axis(axis);
+
+    commands.spawn((
+        Mesh3d(line_mesh),
+        base_transform,
+        MeshMaterial3d(material_handle.clone()),
+        RenderLayers::layer(layers::GIZMOS_LAYER),
+    ));
+
+    commands
+        .spawn((
+            Mesh3d(cone_mesh),
+            base_transform.with_translation(base_transform.translation * 2.0),
+            MeshMaterial3d(material_handle),
+            RenderLayers::layer(layers::GIZMOS_LAYER),
+        ))
+        .observe(make_drag_origin(axis));
+}
+
+fn transform_for_axis(axis: Axis) -> Transform {
+    match axis {
+        Axis::X => Transform::from_translation(Vec3::X)
+            .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2)),
+        Axis::Y => Transform::from_translation(Vec3::Y),
+        Axis::Z => Transform::from_translation(Vec3::Z)
+            .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+    }
+}
+
+fn color_for_axis(axis: Axis) -> Color {
+    match axis {
+        Axis::X => RED.into(),
+        Axis::Y => GREEN.into(),
+        Axis::Z => BLUE.into(),
+    }
 }

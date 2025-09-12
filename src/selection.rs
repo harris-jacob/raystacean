@@ -28,9 +28,9 @@ fn box_selection(
     }
 
     // deselect existing
-    for entity in selected.iter() {
-        commands.entity(entity).remove::<Selected>();
-    }
+    // for entity in selected.iter() {
+    //     commands.entity(entity).remove::<Selected>();
+    // }
 
     if let Some(latest) = ev.read().last() {
         let id = geometry::GeometryId::from_color(latest.color());
