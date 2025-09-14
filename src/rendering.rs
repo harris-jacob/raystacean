@@ -176,7 +176,7 @@ fn cursor_position(
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, ShaderType, Default)]
+#[derive(Clone, ShaderType, Default)]
 pub struct GpuBox {
     pub position: [f32; 3],
     _pad1: f32,
