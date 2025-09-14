@@ -1,8 +1,8 @@
 #import bevy_pbr::forward_io::VertexOutput
 
 const MAX_STEPS: i32 = 200;
-const HIT_THRESHOLD: f32 = 0.01;
-const MAX_DISTANCE: f32 = 1000.0;
+const HIT_THRESHOLD: f32 = 0.001;
+const MAX_DISTANCE: f32 = 500.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
 const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
@@ -52,7 +52,40 @@ fn sd_box_frame(in: vec3<f32>, b: vec3<f32>, e: f32, color: vec3<f32>) -> SdfRes
 }
 
 fn sd_ground(p: vec3<f32>) -> SdfResult {
-  return SdfResult(p.y, WHITE);
+  return SdfResult(p.y, grid_color(p));
+}
+
+fn grid_color(pos: vec3<f32>) -> vec3<f32> {
+    let minor_scale = 2.5;
+    let major_scale = 0.5;
+    let line_thickness = 0.01;
+    
+    let p_minor = pos.xz * minor_scale;
+    let gx = abs(fract(p_minor.x) - 0.5);
+    let gz = abs(fract(p_minor.y) - 0.5);
+    let line_minor = f32(gx < line_thickness || gz < line_thickness);
+
+    let p_major = pos.xz * major_scale;
+    let mx = abs(fract(p_major.x) - 0.5);
+    let mz = abs(fract(p_major.y) - 0.5);
+    let line_major = f32(mx < line_thickness || mz < line_thickness);
+
+    let base_col   = vec3<f32>(0.95, 0.97, 1.0);
+    let minor_col  = vec3<f32>(0.4, 0.6, 0.9);
+    let major_col  = vec3<f32>(0.1, 0.3, 0.6);
+
+    var col = base_col;
+    if (line_minor > 0.5) { col = minor_col; }
+    if (line_major > 0.5) { col = major_col; }
+
+    return col;
+}
+
+fn sky_color(rd: vec3<f32>) -> vec3<f32> {
+    let t = clamp(0.5 + 0.5 * rd.y, 0.0, 1.0);
+    let horizon = vec3<f32>(0.8, 0.9, 1.0);
+    let zenith  = vec3<f32>(0.4, 0.6, 0.9);
+    return mix(horizon, zenith, t);
 }
 
 struct SdfResult {
@@ -124,6 +157,7 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
             let normal = calc_normal(pos);
             let reflected = reflect(camera_dir, normal);
 
+
             var color = vec3<f32>(0.0);  
 
 
@@ -137,7 +171,7 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
                 // Fresnel
                 spec *= 0.04+0.96*pow(clamp(1.0-dot(half_dir, sun_dir), 0.0, 1.0), 5.0);
 
-                let diffuse_color = result.color * 2.20*diff*vec3<f32>(1.30, 1.00, 0.70);
+                let diffuse_color = result.color * 1.8*diff*vec3<f32>(1.30, 1.00, 0.70);
                 let specular_color = 5.00*spec*vec3<f32>(1.30, 1.0, 0.7);
                 color += diffuse_color+specular_color;
             }
@@ -152,8 +186,8 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
                 spec *= 0.04+0.96*pow(clamp(1.0+dot(normal, camera_dir), 0.0, 1.0), 5.0);
                 spec *= soft_shadow(pos, reflected, 0.02, 2.5);
 
-                color += result.color * 0.6 * diff * vec3<f32>(0.4, 0.6, 1.15);
-                color += 2.00*spec*vec3<f32>(0.4, 0.6, 1.30);
+                color += result.color * 0.4 * diff * vec3<f32>(0.4, 0.6, 1.15);
+                color += 1.00*spec*vec3<f32>(0.4, 0.6, 1.30);
             }
 
             
@@ -169,7 +203,7 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
 
 
     // Sky color
-    return RayMarchOut(vec3<f32>(0.7, 0.7, 0.9) - max(camera_dir.y,0.0)*0.3, BLACK);
+    return RayMarchOut(sky_color(camera_dir), BLACK);
 }
 
 
