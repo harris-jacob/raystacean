@@ -1,6 +1,6 @@
 #import bevy_pbr::forward_io::VertexOutput
 
-const MAX_STEPS: i32 = 100;
+const MAX_STEPS: i32 = 200;
 const HIT_THRESHOLD: f32 = 0.01;
 const MAX_DISTANCE: f32 = 1000.0;
 
@@ -102,16 +102,62 @@ fn max_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
     return s2;
 }
 
-fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
+struct RayMarchOut {
+    color: vec3<f32>,
+    unlit_color: vec3<f32>,
+}
+
+// Lighting method based on Inigo Quilez' raymarching - primatives demo
+// https://www.shadertoy.com/view/Xds3zN
+fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
     var dist = 0.0;
+    let sun_dir = normalize(vec3<f32>(-0.5, 0.4, -0.6));
+    let half_dir = normalize(sun_dir - camera_dir);
+
 
     for (var i = 0; i < MAX_STEPS; i++) {
-        var pos = cameraOrigin + dist * cameraDir;
+        var pos = camera_origin + dist * camera_dir;
         let result = map(pos);
 
         // Hit something
         if(result.dist < HIT_THRESHOLD) {
-            return result.color;
+            let normal = calc_normal(pos);
+            let reflected = reflect(camera_dir, normal);
+
+            var color = vec3<f32>(0.0);  
+
+
+            {
+                // diffuse
+                var diff = clamp(dot(normal, sun_dir), 0.0, 1.0);
+                diff *= soft_shadow(pos, sun_dir, 0.02, 2.5);
+                // Blinn-phong Specular
+                var spec = pow(max(dot(normal, half_dir), 0.0), 16.0);
+                spec *= diff;
+                // Fresnel
+                spec *= 0.04+0.96*pow(clamp(1.0-dot(half_dir, sun_dir), 0.0, 1.0), 5.0);
+
+                let diffuse_color = result.color * 2.20*diff*vec3<f32>(1.30, 1.00, 0.70);
+                let specular_color = 5.00*spec*vec3<f32>(1.30, 1.0, 0.7);
+                color += diffuse_color+specular_color;
+            }
+
+                // Sky light;
+            {
+                // diff
+                let diff = sqrt(clamp(0.5 + 0.5*normal.y, 0.0, 1.0));
+                var spec = smoothstep(-0.2, 0.2, reflected.y);
+                spec *= diff;
+                // Fresnel
+                spec *= 0.04+0.96*pow(clamp(1.0+dot(normal, camera_dir), 0.0, 1.0), 5.0);
+                spec *= soft_shadow(pos, reflected, 0.02, 2.5);
+
+                color += result.color * 0.6 * diff * vec3<f32>(0.4, 0.6, 1.15);
+                color += 2.00*spec*vec3<f32>(0.4, 0.6, 1.30);
+            }
+
+            
+            return RayMarchOut(color, result.color);
         }
 
         dist = dist + result.dist;
@@ -121,8 +167,9 @@ fn ray_march(cameraOrigin: vec3<f32>, cameraDir: vec3<f32>) -> vec3<f32> {
         }
     }
 
-    // Outside max steps and didn't hit anything
-    return vec3<f32>(0.0);
+
+    // Sky color
+    return RayMarchOut(vec3<f32>(0.7, 0.7, 0.9) - max(camera_dir.y,0.0)*0.3, BLACK);
 }
 
 
@@ -148,17 +195,40 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let ray_dir_world    = normalize((view_to_world * vec4<f32>(ray_dir_view, 0.0)).xyz);
 
     // 5. March in world space
-    let color = ray_march(ray_origin_world, ray_dir_world);
+    let result = ray_march(ray_origin_world, ray_dir_world);
 
     if distance(ndc.xy, cursor_position) < 0.001 {
-        selection[0] = color.x;
-        selection[1] = color.y;
-        selection[2] = color.z;
+        selection[0] = result.unlit_color.x;
+        selection[1] = result.unlit_color.y;
+        selection[2] = result.unlit_color.z;
     }
 
 
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(result.color, 1.0);
 
+}
+
+fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f32 {
+    var t: f32 = min_dist;
+    var res: f32 = 1.0;
+    for (var i: i32 = 0; i < 32; i = i + 1) {
+        let h = map(ro + rd * t).dist;
+        if (h < 0.001) {
+            return 0.0;
+        }
+        res = min(res, 16.0 * h / t);
+        t = t + h;
+        if (t > max_dist) { break; }
+    }
+    return clamp(res, 0.0, 1.0);
+}
+
+fn calc_normal(p: vec3<f32>) -> vec3<f32> {
+    let e: f32 = 0.001;
+    let dx = map(p + vec3<f32>(e,0,0)).dist - map(p - vec3<f32>(e,0,0)).dist;
+    let dy = map(p + vec3<f32>(0,e,0)).dist - map(p - vec3<f32>(0,e,0)).dist;
+    let dz = map(p + vec3<f32>(0,0,e)).dist - map(p - vec3<f32>(0,0,e)).dist;
+    return normalize(vec3<f32>(dx, dy, dz));
 }
 
 fn remap(x: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) -> f32 {
