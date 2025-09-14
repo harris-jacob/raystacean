@@ -4,6 +4,8 @@ An experimental Bevy + wgpu project, built to explore real-time rendering and
 building 3D geometry using signed distance fields (SDFs) and raymarching. 
 Inspired by[ShapeUp](https://github.com/danielchasehooper/ShapeUp-public) and [Inigo Quilez's SDF geometry shadertoy demo](https://www.shadertoy.com/view/Xds3zN).
 
+![A Sample Rendered Scene](images/demo-scene.png)
+
 ## Planned Features
 - Ray marched renderer written in WGSL, running inside a bevy application.
 - Primative support: add, move, scale, rotate primative 3d shapes in the scene.
@@ -30,4 +32,10 @@ Run the project with:
 
 ```
 cargo run
+```
+
+For a production build run:
+
+```
+cargo build --release
 ```
