@@ -15,7 +15,7 @@ impl Plugin for GeometryPlugin {
 #[derive(Component, Debug)]
 pub struct BoxGeometry {
     pub position: Vec3,
-    pub size: f32,
+    pub scale: Vec3,
     pub id: GeometryId,
 }
 
@@ -35,8 +35,15 @@ impl BoxGeometry {
     fn new(position: Vec3, id: u32) -> Self {
         BoxGeometry {
             position,
-            size: 1.0,
+            scale: Vec3::ONE * 2.5,
             id: GeometryId::new(id),
+        }
+    }
+
+    fn with_y(self, y: f32) -> Self {
+        Self {
+            position: self.position.with_y(y),
+            ..self
         }
     }
 }
@@ -61,8 +68,10 @@ fn place_box(
     };
 
     if let Some(hit) = cast_ray_at_ground_in_scene(cursor_pos, projection, transform, window) {
-        // sit the box on the plane rather than putting the center on it
-        commands.spawn(BoxGeometry::new(hit.with_y(1.0), global_id.next()));
+        let geometry = BoxGeometry::new(hit, global_id.next());
+        // sit the box on the  plane rather than putting the center on it
+        let y = geometry.scale.y;
+        commands.spawn(geometry.with_y(y));
     };
 }
 

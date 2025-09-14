@@ -142,9 +142,10 @@ fn boxes_to_gpu(
         .iter()
         .map(|(b, selected)| GpuBox {
             position: b.position.into(),
-            size: b.size,
+            scale: b.scale.into(),
             color: b.id.to_color(),
             selected: bool_to_gpu(selected),
+            ..default()
         })
         .collect();
 
@@ -175,10 +176,12 @@ fn cursor_position(
 }
 
 #[repr(C)]
-#[derive(Clone, ShaderType)]
+#[derive(Clone, Copy, ShaderType, Default)]
 pub struct GpuBox {
     pub position: [f32; 3],
-    pub size: f32,
+    _pad1: f32,
+    pub scale: [f32; 3],
+    _pad2: f32,
     pub color: [f32; 3],
     pub selected: u32,
 }

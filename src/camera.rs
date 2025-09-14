@@ -40,7 +40,7 @@ impl Default for CameraControls {
     fn default() -> Self {
         Self {
             target: Vec3::new(0.0, 0.0, 0.0),
-            azimuth: 0.0,
+            azimuth: 20.0,
             distance: 10.0,
             elevation: std::f32::consts::FRAC_PI_4,
         }
@@ -95,7 +95,7 @@ fn orbit_camera_input(
     let sensitivity = 0.005;
     camera.azimuth -= delta.x * sensitivity;
     camera.elevation = (camera.elevation + delta.y * sensitivity).clamp(
-        -std::f32::consts::FRAC_PI_2 + 0.01,
+        std::f32::consts::FRAC_PI_8,
         std::f32::consts::FRAC_PI_2 - 0.01,
     );
 }
