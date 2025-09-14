@@ -20,9 +20,9 @@ enum Tool {
     PlaceGeometry,
 }
 
-impl Into<controls::ControlMode> for Tool {
-    fn into(self) -> controls::ControlMode {
-        match self {
+impl From<Tool> for controls::ControlMode {
+    fn from(value: Tool) -> Self {
+        match value {
             Tool::Selection => controls::ControlMode::Select,
             Tool::PlaceGeometry => controls::ControlMode::PlaceGeometry,
         }

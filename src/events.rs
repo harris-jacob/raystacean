@@ -12,6 +12,12 @@ pub struct OriginDragged {
     pub delta: Vec2,
 }
 
+#[derive(Event, Debug)]
+pub struct ScalingGizmoDragged {
+    pub axis: Vec3,
+    pub delta: Vec2
+}
+
 impl PixelColorUnderCursor {
     pub fn new(color: Vec3) -> Self {
         Self(color)

@@ -9,10 +9,13 @@ pub struct GizmosPlugin;
 #[derive(Component, Debug)]
 pub struct Origin;
 
+#[derive(Component, Debug)]
+pub struct ScalingGizmo(Axis);
+
 impl Plugin for GizmosPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_origin_gizmo);
-        app.add_systems(Update, draw_coordinate_system);
+        app.add_systems(Startup, setup);
+        app.add_systems(Update, (draw_coordinate_system, draw_scaling_cubes));
     }
 }
 
@@ -31,7 +34,32 @@ fn draw_coordinate_system(
     }
 }
 
-fn setup_origin_gizmo(
+// Draw a coordinate system for the selected box
+fn draw_scaling_cubes(
+    selected: Query<&geometry::BoxGeometry, With<selection::Selected>>,
+    scaling_cube: Query<(&mut Transform, &mut Visibility, &ScalingGizmo)>,
+) {
+    for (mut transform, mut visibility, ScalingGizmo(axis)) in scaling_cube {
+        if let Ok(selected) = selected.single() {
+            *visibility = Visibility::Visible;
+            *transform = match axis {
+                Axis::X => Transform::from_translation(
+                    selected.position + vec3(selected.scale.x, 0.0, 0.0),
+                ),
+                Axis::Y => Transform::from_translation(
+                    selected.position + vec3(0.0, selected.scale.y, 0.0),
+                ),
+                Axis::Z => Transform::from_translation(
+                    selected.position + vec3(0.0, 0.0, selected.scale.z),
+                ),
+            };
+        } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -42,9 +70,31 @@ fn setup_origin_gizmo(
     }));
 
     let cone_mesh = meshes.add(Mesh::from(Cone {
-        radius: 0.1,
+        radius: 0.2,
         height: 0.5,
     }));
+
+    let cube_mesh = meshes.add(Mesh::from(Cuboid {
+        half_size: vec3(0.15, 0.15, 0.15),
+    }));
+
+    let x_material = materials.add(StandardMaterial {
+        base_color: color_for_axis(Axis::X),
+        unlit: true,
+        ..default()
+    });
+
+    let y_material = materials.add(StandardMaterial {
+        base_color: color_for_axis(Axis::Y),
+        unlit: true,
+        ..default()
+    });
+
+    let z_material = materials.add(StandardMaterial {
+        base_color: color_for_axis(Axis::Z),
+        unlit: true,
+        ..default()
+    });
 
     commands
         .spawn((
@@ -56,26 +106,68 @@ fn setup_origin_gizmo(
         .with_children(|parent| {
             draw_origin_axis(
                 parent,
-                &mut materials,
+                x_material.clone(),
                 line_mesh.clone(),
                 cone_mesh.clone(),
                 Axis::X,
             );
             draw_origin_axis(
                 parent,
-                &mut materials,
+                y_material.clone(),
                 line_mesh.clone(),
                 cone_mesh.clone(),
                 Axis::Y,
             );
             draw_origin_axis(
                 parent,
-                &mut materials,
+                z_material.clone(),
                 line_mesh.clone(),
                 cone_mesh.clone(),
                 Axis::Z,
             );
         });
+
+    commands
+        .spawn((
+            ScalingGizmo(Axis::X),
+            Visibility::Hidden,
+            Mesh3d(cube_mesh.clone()),
+            MeshMaterial3d(x_material.clone()),
+            RenderLayers::layer(layers::GIZMOS_LAYER),
+        ))
+        .observe(make_drag_scaling_gizmo(Axis::X));
+
+    commands
+        .spawn((
+            ScalingGizmo(Axis::Y),
+            Visibility::Hidden,
+            Mesh3d(cube_mesh.clone()),
+            MeshMaterial3d(y_material.clone()),
+            RenderLayers::layer(layers::GIZMOS_LAYER),
+        ))
+        .observe(make_drag_scaling_gizmo(Axis::Y));
+
+    commands
+        .spawn((
+            ScalingGizmo(Axis::Z),
+            Visibility::Hidden,
+            Mesh3d(cube_mesh),
+            MeshMaterial3d(z_material.clone()),
+            RenderLayers::layer(layers::GIZMOS_LAYER),
+        ))
+        .observe(make_drag_scaling_gizmo(Axis::Z));
+}
+
+fn make_drag_scaling_gizmo(
+    axis: Axis,
+) -> impl Fn(Trigger<Pointer<Drag>>, EventWriter<events::ScalingGizmoDragged>) {
+    move |drag: Trigger<Pointer<Drag>>,
+          mut event_writer: EventWriter<events::ScalingGizmoDragged>| {
+        event_writer.write(events::ScalingGizmoDragged {
+            delta: drag.delta,
+            axis: axis.to_vec(),
+        });
+    }
 }
 
 fn make_drag_origin(
@@ -108,17 +200,11 @@ impl Axis {
 
 fn draw_origin_axis(
     commands: &mut RelatedSpawnerCommands<ChildOf>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
+    material_handle: Handle<StandardMaterial>,
     line_mesh: Handle<Mesh>,
     cone_mesh: Handle<Mesh>,
     axis: Axis,
 ) {
-    let material_handle = materials.add(StandardMaterial {
-        base_color: color_for_axis(axis),
-        unlit: true,
-        ..default()
-    });
-
     let base_transform = transform_for_axis(axis);
 
     commands.spawn((

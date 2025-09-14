@@ -18,6 +18,7 @@ fn main() {
         .add_event::<events::PixelColorUnderCursor>()
         .add_event::<events::PlaneClicked>()
         .add_event::<events::OriginDragged>()
+        .add_event::<events::ScalingGizmoDragged>()
         .add_plugins(DefaultPlugins.set(LogPlugin {
             level: bevy::log::Level::DEBUG,
             ..default()

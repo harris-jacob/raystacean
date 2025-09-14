@@ -11,9 +11,11 @@ const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
 struct GpuBox {
     position: vec3<f32>,
-    size: f32, 
+    _pad1: f32,
+    scale: vec3<f32>, 
+    _pad2: f32,
     color: vec3<f32>,
-    selected: u32
+    selected: f32,
 }
 
 @group(2) @binding(0)
@@ -100,11 +102,11 @@ fn map(p: vec3<f32>) -> SdfResult {
         let box = boxes[i];
 
         if(box.selected == 1) {
-            let outline = sd_box_frame(p - box.position, vec3<f32>(box.size + 0.05), 0.02, RED);
+            let outline = sd_box_frame(p - box.position, box.scale + vec3<f32>(0.05), 0.02, RED);
             sdf = min_sdf(sdf, outline);
         }
 
-        let b = sd_box(p - box.position, vec3<f32>(box.size), box.color);
+        let b = sd_box(p - box.position, box.scale, box.color);
 
         sdf = min_sdf(sdf, b);
     }

@@ -6,11 +6,37 @@ pub struct ManipulationPlugin;
 
 impl Plugin for ManipulationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, apply_drag_to_selection);
+        app.add_systems(
+            Update,
+            (
+                apply_position_drag_to_selection,
+                apply_scaling_drag_to_selection,
+            ),
+        );
     }
 }
 
-fn apply_drag_to_selection(
+fn apply_position_drag_to_selection(
+    mut drag_events: EventReader<events::ScalingGizmoDragged>,
+    mut selected: Query<&mut geometry::BoxGeometry, With<selection::Selected>>,
+    camera: Query<(&GlobalTransform, &Camera), With<camera::MainCamera>>,
+) {
+    for event in drag_events.read() {
+        let mut geometry = selected.single_mut().expect("single");
+        let (camera_transform, camera) = camera.single().expect("single");
+        if let Some(delta_scalar) = axis_drag_scalar(
+            camera,
+            camera_transform,
+            geometry.position,
+            event.axis,
+            event.delta,
+        ) {
+            geometry.scale += event.axis.normalize() * delta_scalar * 0.05;
+        }
+    }
+}
+
+fn apply_scaling_drag_to_selection(
     mut drag_events: EventReader<events::OriginDragged>,
     mut selected: Query<&mut geometry::BoxGeometry, With<selection::Selected>>,
     camera: Query<(&GlobalTransform, &Camera), With<camera::MainCamera>>,
@@ -46,7 +72,7 @@ fn axis_drag_scalar(
         .ok()?;
 
     let axis_2d = (screen_axis_pt - screen_obj).trunc();
-    
+
     if axis_2d.length_squared() < 1e-6 {
         return None;
     }
