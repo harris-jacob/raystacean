@@ -1,18 +1,18 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
-use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use bevy::render::render_resource::{
-    AsBindGroup, BufferUsages, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
-    TextureUsages,
+    AsBindGroup, BufferUsages, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat, TextureUsages
 };
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::view::RenderLayers;
 
-use crate::layers::TEXTURE_CAMERA;
 use crate::{events, selection};
 use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
+
+#[derive(Resource)]
+pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
@@ -22,7 +22,8 @@ impl Plugin for RenderingPlugin {
     }
 }
 
-fn setup(
+// TODO: ordering is a mess
+pub fn setup(
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
@@ -48,32 +49,22 @@ fn setup(
         TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
 
     let image_handle = images.add(image);
-
     let boxes = buffers.add(ShaderStorageBuffer::default());
+
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
     selection_buffer.buffer_description.usage |= BufferUsages::COPY_SRC;
-
-    let selection = buffers.add(selection_buffer);
 
     let material_handle = materials.add(SceneMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
+        is_color_picking: bool_to_gpu(false),
         boxes: boxes.clone(),
-        selection: selection.clone(),
         cursor_position: Vec2::default(),
+        // Selection buffer is not needed here
+        selection: buffers.add(selection_buffer),
     });
-
-    commands.spawn(Readback::buffer(selection.clone())).observe(
-        |trigger: Trigger<ReadbackComplete>, mut ev: EventWriter<events::PixelColorUnderCursor>| {
-            let data: Vec<f32> = trigger.event().to_shader_type();
-
-            ev.write(events::PixelColorUnderCursor::new(Vec3::new(
-                data[0], data[1], data[2],
-            )));
-        },
-    );
 
     commands.insert_resource(ShaderBufferHandle(boxes));
     commands.insert_resource(SceneMaterialHandle(material_handle.clone()));
@@ -94,7 +85,7 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Camera {
-            order: TEXTURE_CAMERA,
+            order: layers::TEXTURE_CAMERA,
             target: image_handle.clone().into(),
             clear_color: Color::WHITE.into(),
             ..default()
@@ -144,6 +135,7 @@ fn boxes_to_gpu(
             position: b.position.into(),
             scale: b.scale.into(),
             color: b.id.to_color(),
+            logical_color: b.id.to_color(),
             selected: bool_to_gpu(selected),
             ..default()
         })
@@ -152,7 +144,7 @@ fn boxes_to_gpu(
     buffer.set_data(gpu_data);
 }
 
-fn bool_to_gpu(value: bool) -> u32 {
+pub fn bool_to_gpu(value: bool) -> u32 {
     if value { 1 } else { 0 }
 }
 
@@ -183,30 +175,31 @@ pub struct GpuBox {
     pub scale: [f32; 3],
     _pad2: f32,
     pub color: [f32; 3],
+    _pad3: f32,
+    pub logical_color: [f32; 3],
     pub selected: u32,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct SceneMaterial {
     #[uniform(0)]
-    aspect_ratio: Vec2,
+    pub aspect_ratio: Vec2,
     #[uniform(1)]
     pub view_to_world: Mat4,
     #[uniform(2)]
     pub clip_to_view: Mat4,
     #[uniform(3)]
     pub cursor_position: Vec2,
-    #[storage(4, read_only)]
+    #[uniform(4)]
+    pub is_color_picking: u32,
+    #[storage(5, read_only)]
     pub boxes: Handle<ShaderStorageBuffer>,
-    #[storage(5)]
+    #[storage(6)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 
 #[derive(Resource)]
 pub struct SceneMaterialHandle(Handle<SceneMaterial>);
-
-#[derive(Resource)]
-pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);
 
 impl ShaderBufferHandle {
     pub fn get_mut<'a>(
@@ -216,6 +209,10 @@ impl ShaderBufferHandle {
         assets
             .get_mut(&self.0)
             .expect("ShaderStorageBuffer should exist")
+    }
+
+    pub fn inner(&self) -> &Handle<ShaderStorageBuffer> {
+        &self.0
     }
 }
 
