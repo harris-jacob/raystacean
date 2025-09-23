@@ -11,9 +11,8 @@ const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
 struct GpuBox {
     position: vec3<f32>,
-    _pad1: f32,
     scale: vec3<f32>, 
-    _pad2: f32,
+    logical_color: vec3<f32>,
     color: vec3<f32>,
     selected: f32,
 }
@@ -27,8 +26,10 @@ var<uniform> clip_to_view: mat4x4<f32>;
 @group(2) @binding(3)
 var<uniform> cursor_position: vec2<f32>;
 @group(2) @binding(4)
-var<storage, read> boxes: array<GpuBox>;
+var<uniform> is_color_picking: u32;
 @group(2) @binding(5)
+var<storage, read> boxes: array<GpuBox>;
+@group(2) @binding(6)
 var<storage, read_write> selection: array<f32>;
 
 fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
@@ -96,22 +97,30 @@ struct SdfResult {
 }
 
 fn map(p: vec3<f32>) -> SdfResult {
-    var sdf =  sd_ground(p);
+    var sdf = SdfResult(100.0, BLACK);
 
     for (var i = 0u; i < arrayLength(&boxes); i++) {
         let box = boxes[i];
 
-        if(box.selected == 1) {
-            let outline = sd_box_frame(p - box.position, box.scale + vec3<f32>(0.05), 0.02, RED);
-            sdf = min_sdf(sdf, outline);
-        }
-
-        let b = sd_box(p - box.position, box.scale, box.color);
+        let color = color_from_box(box);
+        let b = sd_box(p - box.position, box.scale, color);
 
         sdf = min_sdf(sdf, b);
     }
 
+    if(is_color_picking == 0) {
+        sdf =  min_sdf(sd_ground(p), sdf);
+    }
+
     return sdf;
+}
+
+fn color_from_box(box: GpuBox) -> vec3<f32> {
+    if(is_color_picking != 0) {
+        return box.color;
+    } else {
+        return box.logical_color;
+    }
 }
 
 fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
@@ -137,17 +146,10 @@ fn max_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
     return s2;
 }
 
-struct RayMarchOut {
-    color: vec3<f32>,
-    unlit_color: vec3<f32>,
-}
-
 // Lighting method based on Inigo Quilez' raymarching - primatives demo
 // https://www.shadertoy.com/view/Xds3zN
-fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
+fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
     var dist = 0.0;
-    let sun_dir = normalize(vec3<f32>(-0.5, 0.4, -0.6));
-    let half_dir = normalize(sun_dir - camera_dir);
 
 
     for (var i = 0; i < MAX_STEPS; i++) {
@@ -156,44 +158,10 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
 
         // Hit something
         if(result.dist < HIT_THRESHOLD) {
-            let normal = calc_normal(pos);
-            let reflected = reflect(camera_dir, normal);
 
-
-            var color = vec3<f32>(0.0);  
-
-
-            {
-                // diffuse
-                var diff = clamp(dot(normal, sun_dir), 0.0, 1.0);
-                diff *= soft_shadow(pos, sun_dir, 0.02, 2.5);
-                // Blinn-phong Specular
-                var spec = pow(max(dot(normal, half_dir), 0.0), 16.0);
-                spec *= diff;
-                // Fresnel
-                spec *= 0.04+0.96*pow(clamp(1.0-dot(half_dir, sun_dir), 0.0, 1.0), 5.0);
-
-                let diffuse_color = result.color * 1.8*diff*vec3<f32>(1.30, 1.00, 0.70);
-                let specular_color = 5.00*spec*vec3<f32>(1.30, 1.0, 0.7);
-                color += diffuse_color+specular_color;
-            }
-
-                // Sky light;
-            {
-                // diff
-                let diff = sqrt(clamp(0.5 + 0.5*normal.y, 0.0, 1.0));
-                var spec = smoothstep(-0.2, 0.2, reflected.y);
-                spec *= diff;
-                // Fresnel
-                spec *= 0.04+0.96*pow(clamp(1.0+dot(normal, camera_dir), 0.0, 1.0), 5.0);
-                spec *= soft_shadow(pos, reflected, 0.02, 2.5);
-
-                color += result.color * 0.4 * diff * vec3<f32>(0.4, 0.6, 1.15);
-                color += 1.00*spec*vec3<f32>(0.4, 0.6, 1.30);
-            }
-
+            let lit_color = calc_lighting(pos, result.color, camera_dir);
             
-            return RayMarchOut(color, result.color);
+            return lit_color;
         }
 
         dist = dist + result.dist;
@@ -205,7 +173,7 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
 
 
     // Sky color
-    return RayMarchOut(sky_color(camera_dir), BLACK);
+    return sky_color(camera_dir);
 }
 
 
@@ -233,15 +201,63 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // 5. March in world space
     let result = ray_march(ray_origin_world, ray_dir_world);
 
-    if distance(ndc.xy, cursor_position) < 0.001 {
-        selection[0] = result.unlit_color.x;
-        selection[1] = result.unlit_color.y;
-        selection[2] = result.unlit_color.z;
+    if is_color_picking != 0 && distance(ndc.xy, cursor_position) < 0.001 {
+        selection[0] = result.x;
+        selection[1] = result.y;
+        selection[2] = result.z;
     }
 
 
-    return vec4<f32>(result.color, 1.0);
+    return vec4<f32>(result, 1.0);
 
+}
+
+fn calc_lighting(pos: vec3<f32>, in: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
+    // Don't bother with lighting for color picking pass
+    if (is_color_picking != 0) {
+        return in;
+    }
+
+    let sun_dir = normalize(vec3<f32>(-0.5, 0.4, -0.6));
+    let half_dir = normalize(sun_dir - camera_dir);
+
+    let normal = calc_normal(pos);
+    let reflected = reflect(camera_dir, normal);
+
+
+    var color = vec3<f32>(0.0);  
+
+
+    {
+        // diffuse
+        var diff = clamp(dot(normal, sun_dir), 0.0, 1.0);
+        diff *= soft_shadow(pos, sun_dir, 0.02, 2.5);
+        // Blinn-phong Specular
+        var spec = pow(max(dot(normal, half_dir), 0.0), 16.0);
+        spec *= diff;
+        // Fresnel
+        spec *= 0.04+0.96*pow(clamp(1.0-dot(half_dir, sun_dir), 0.0, 1.0), 5.0);
+
+        let diffuse_color = in * 1.8*diff*vec3<f32>(1.30, 1.00, 0.70);
+        let specular_color = 5.00*spec*vec3<f32>(1.30, 1.0, 0.7);
+        color += diffuse_color+specular_color;
+    }
+
+        // Sky light;
+    {
+        // diff
+        let diff = sqrt(clamp(0.5 + 0.5*normal.y, 0.0, 1.0));
+        var spec = smoothstep(-0.2, 0.2, reflected.y);
+        spec *= diff;
+        // Fresnel
+        spec *= 0.04+0.96*pow(clamp(1.0+dot(normal, camera_dir), 0.0, 1.0), 5.0);
+        spec *= soft_shadow(pos, reflected, 0.02, 2.5);
+
+        color += in * 0.4 * diff * vec3<f32>(0.4, 0.6, 1.15);
+        color += 1.00*spec*vec3<f32>(0.4, 0.6, 1.30);
+    }
+
+    return color;
 }
 
 fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f32 {

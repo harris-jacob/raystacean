@@ -8,7 +8,7 @@ use bevy::render::render_resource::{
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::view::RenderLayers;
 
-use crate::layers::TEXTURE_CAMERA;
+use crate::layers::SHADER_CAMERA;
 use crate::{events, selection};
 use crate::{geometry, layers};
 
@@ -56,16 +56,27 @@ fn setup(
 
     let selection = buffers.add(selection_buffer);
 
-    let material_handle = materials.add(SceneMaterial {
+    let lit_material_handle = materials.add(SceneMaterial {
         aspect_ratio: Vec2::new(window.width(), window.height()),
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
+        is_color_picking: LIT_PASS,
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
     });
 
-    commands.spawn(Readback::buffer(selection.clone())).observe(
+    let color_pick_material_handle = materials.add(SceneMaterial {
+        aspect_ratio: Vec2::new(window.width(), window.height()),
+        view_to_world: Mat4::default(),
+        clip_to_view: Mat4::default(),
+        is_color_picking: COLOR_PICKING_PASS,
+        boxes: boxes.clone(),
+        selection: selection.clone(),
+        cursor_position: Vec2::default(),
+    });
+
+    commands.spawn(Readback::buffer(selection)).observe(
         |trigger: Trigger<ReadbackComplete>, mut ev: EventWriter<events::PixelColorUnderCursor>| {
             let data: Vec<f32> = trigger.event().to_shader_type();
 
@@ -76,17 +87,17 @@ fn setup(
     );
 
     commands.insert_resource(ShaderBufferHandle(boxes));
-    commands.insert_resource(SceneMaterialHandle(material_handle.clone()));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
         Vec2::new(window.width() * 0.5, window.height() * 0.5),
     )));
 
+    // Main rendering pass, render to the screen
     commands
         .spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(material_handle),
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(lit_material_handle),
             RenderLayers::layer(layers::SHADER_LAYER),
         ))
         .observe(output_click_event);
@@ -94,8 +105,7 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Camera {
-            order: TEXTURE_CAMERA,
-            target: image_handle.clone().into(),
+            order: SHADER_CAMERA,
             clear_color: Color::WHITE.into(),
             ..default()
         },
@@ -107,18 +117,29 @@ fn setup(
         RenderLayers::layer(layers::SHADER_LAYER),
     ));
 
-    commands.spawn((
-        Camera2d,
-        Camera {
-            order: layers::SHADER_CAMERA,
-            ..default()
-        },
-        RenderLayers::layer(layers::SHADER_LAYER),
-    ));
+    // Selection pass, render to an image
+    commands
+        .spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(color_pick_material_handle),
+            RenderLayers::layer(layers::SELECTION_LAYER),
+        ))
+        .observe(output_click_event);
 
     commands.spawn((
-        Sprite::from_image(image_handle),
-        RenderLayers::layer(layers::SHADER_LAYER),
+        Camera3d::default(),
+        Camera {
+            order: layers::SELECTION_CAMERA,
+            target: image_handle.clone().into(),
+            clear_color: Color::WHITE.into(),
+            ..default()
+        },
+        Transform::from_xyz(0.0, 0.0, 1.0),
+        Projection::from(OrthographicProjection {
+            scale: 1.0,
+            ..OrthographicProjection::default_3d()
+        }),
+        RenderLayers::layer(layers::SELECTION_LAYER),
     ));
 }
 
@@ -143,7 +164,8 @@ fn boxes_to_gpu(
         .map(|(b, selected)| GpuBox {
             position: b.position.into(),
             scale: b.scale.into(),
-            color: b.id.to_color(),
+            color: b.id.to_scrambled_color(),
+            logical_color: b.id.to_color(),
             selected: bool_to_gpu(selected),
             ..default()
         })
@@ -156,23 +178,20 @@ fn bool_to_gpu(value: bool) -> u32 {
     if value { 1 } else { 0 }
 }
 
-fn cursor_position(
-    windows: Query<&Window>,
-    scene_material: Res<SceneMaterialHandle>,
-    mut materials: ResMut<Assets<SceneMaterial>>,
-) {
+fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SceneMaterial>>) {
     let window = windows.single().expect("single");
-    let scene_material = scene_material.get_mut(&mut materials);
 
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
 
-    // Cursor position to ndc
-    scene_material.cursor_position = Vec2::new(
-        cursor_pos.x / window.width() * 2.0 - 1.0,
-        (cursor_pos.y / window.height() * 2.0) - 1.0,
-    );
+    for (_, material) in materials.iter_mut() {
+        // Cursor position to ndc
+        material.cursor_position = Vec2::new(
+            cursor_pos.x / window.width() * 2.0 - 1.0,
+            (cursor_pos.y / window.height() * 2.0) - 1.0,
+        );
+    }
 }
 
 #[repr(C)]
@@ -183,6 +202,8 @@ pub struct GpuBox {
     pub scale: [f32; 3],
     _pad2: f32,
     pub color: [f32; 3],
+    _pad3: f32,
+    pub logical_color: [f32; 3],
     pub selected: u32,
 }
 
@@ -196,14 +217,16 @@ pub struct SceneMaterial {
     pub clip_to_view: Mat4,
     #[uniform(3)]
     pub cursor_position: Vec2,
-    #[storage(4, read_only)]
+    #[uniform(4)]
+    pub is_color_picking: u32,
+    #[storage(5, read_only)]
     pub boxes: Handle<ShaderStorageBuffer>,
-    #[storage(5)]
+    #[storage(6)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 
-#[derive(Resource)]
-pub struct SceneMaterialHandle(Handle<SceneMaterial>);
+const LIT_PASS: u32 = 0;
+const COLOR_PICKING_PASS: u32 = 1;
 
 #[derive(Resource)]
 pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);
@@ -216,12 +239,6 @@ impl ShaderBufferHandle {
         assets
             .get_mut(&self.0)
             .expect("ShaderStorageBuffer should exist")
-    }
-}
-
-impl SceneMaterialHandle {
-    pub fn get_mut<'a>(&self, assets: &'a mut Assets<SceneMaterial>) -> &'a mut SceneMaterial {
-        assets.get_mut(&self.0).expect("SceneMaterial should exist")
     }
 }
 
