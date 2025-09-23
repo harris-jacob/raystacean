@@ -60,7 +60,7 @@ fn setup(
         aspect_ratio: Vec2::new(window.width(), window.height()),
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        is_color_picking: bool_to_gpu(false),
+        is_color_picking: bool_to_gpu(true),
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
@@ -70,7 +70,7 @@ fn setup(
         aspect_ratio: Vec2::new(window.width(), window.height()),
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        is_color_picking: bool_to_gpu(true),
+        is_color_picking: bool_to_gpu(false),
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
@@ -164,7 +164,7 @@ fn boxes_to_gpu(
         .map(|(b, selected)| GpuBox {
             position: b.position.into(),
             scale: b.scale.into(),
-            color: b.id.to_color(),
+            color: b.id.to_scrambled_color(),
             logical_color: b.id.to_color(),
             selected: bool_to_gpu(selected),
             ..default()

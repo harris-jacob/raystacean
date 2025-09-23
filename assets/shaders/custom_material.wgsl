@@ -119,7 +119,7 @@ fn map(p: vec3<f32>) -> SdfResult {
 }
 
 fn color_from_box(box: GpuBox) -> vec3<f32> {
-    if(is_color_picking == 0) {
+    if(is_color_picking != 0) {
         return box.color;
     } else {
         return box.logical_color;
