@@ -60,7 +60,7 @@ fn setup(
         aspect_ratio: Vec2::new(window.width(), window.height()),
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        is_color_picking: bool_to_gpu(true),
+        is_color_picking: LIT_PASS,
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
@@ -70,7 +70,7 @@ fn setup(
         aspect_ratio: Vec2::new(window.width(), window.height()),
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        is_color_picking: bool_to_gpu(false),
+        is_color_picking: COLOR_PICKING_PASS,
         boxes: boxes.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
@@ -224,6 +224,9 @@ pub struct SceneMaterial {
     #[storage(6)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
+
+const LIT_PASS: u32 = 0;
+const COLOR_PICKING_PASS: u32 = 1;
 
 #[derive(Resource)]
 pub struct ShaderBufferHandle(Handle<ShaderStorageBuffer>);

@@ -11,11 +11,8 @@ const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
 struct GpuBox {
     position: vec3<f32>,
-    _pad1: f32,
     scale: vec3<f32>, 
-    _pad2: f32,
     logical_color: vec3<f32>,
-    _pad3: f32,
     color: vec3<f32>,
     selected: f32,
 }
