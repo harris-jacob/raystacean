@@ -7,6 +7,7 @@ use bevy::render::render_resource::{
 };
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::view::RenderLayers;
+use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
 use crate::{events, selection};
@@ -18,9 +19,15 @@ impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
             .add_systems(Startup, setup)
-            .add_systems(Update, (boxes_to_gpu, cursor_position));
+            .add_systems(
+                Update,
+                (boxes_to_gpu, cursor_position, window_resize_system),
+            );
     }
 }
+
+#[derive(Component)]
+struct RenderingPlane;
 
 fn setup(
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
@@ -96,6 +103,7 @@ fn setup(
     // Main rendering pass, render to the screen
     commands
         .spawn((
+            RenderingPlane,
             Mesh3d(mesh.clone()),
             MeshMaterial3d(lit_material_handle),
             RenderLayers::layer(layers::SHADER_LAYER),
@@ -120,6 +128,7 @@ fn setup(
     // Selection pass, render to an image
     commands
         .spawn((
+            RenderingPlane,
             Mesh3d(mesh),
             MeshMaterial3d(color_pick_material_handle),
             RenderLayers::layer(layers::SELECTION_LAYER),
@@ -141,6 +150,28 @@ fn setup(
         }),
         RenderLayers::layer(layers::SELECTION_LAYER),
     ));
+}
+
+fn window_resize_system(
+    mut resize_events: EventReader<WindowResized>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut query: Query<&mut Mesh3d, With<RenderingPlane>>,
+) {
+    for e in resize_events.read() {
+        let width = e.width;
+        let height = e.height;
+
+        for (_, mat) in materials.iter_mut() {
+            mat.aspect_ratio = Vec2::new(width, height);
+        }
+
+        for mesh in &mut query {
+            if let Some(mesh) = meshes.get_mut(&mesh.0) {
+                *mesh = Mesh::from(Plane3d::new(Vec3::Z, Vec2::new(width * 0.5, height * 0.5)));
+            }
+        }
+    }
 }
 
 fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) {
