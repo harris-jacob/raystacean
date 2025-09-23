@@ -105,7 +105,8 @@ fn map(p: vec3<f32>) -> SdfResult {
     for (var i = 0u; i < arrayLength(&boxes); i++) {
         let box = boxes[i];
 
-        let b = sd_box(p - box.position, box.scale, box.color);
+        let color = color_from_box(box);
+        let b = sd_box(p - box.position, box.scale, color);
 
         sdf = min_sdf(sdf, b);
     }
@@ -115,6 +116,14 @@ fn map(p: vec3<f32>) -> SdfResult {
     }
 
     return sdf;
+}
+
+fn color_from_box(box: GpuBox) -> vec3<f32> {
+    if(is_color_picking == 0) {
+        return box.color;
+    } else {
+        return box.logical_color;
+    }
 }
 
 fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
@@ -140,14 +149,9 @@ fn max_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
     return s2;
 }
 
-struct RayMarchOut {
-    color: vec3<f32>,
-    unlit_color: vec3<f32>,
-}
-
 // Lighting method based on Inigo Quilez' raymarching - primatives demo
 // https://www.shadertoy.com/view/Xds3zN
-fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
+fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
     var dist = 0.0;
 
 
@@ -160,7 +164,7 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
 
             let lit_color = calc_lighting(pos, result.color, camera_dir);
             
-            return RayMarchOut(lit_color, result.color);
+            return lit_color;
         }
 
         dist = dist + result.dist;
@@ -172,7 +176,7 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> RayMarchOut {
 
 
     // Sky color
-    return RayMarchOut(sky_color(camera_dir), BLACK);
+    return sky_color(camera_dir);
 }
 
 
@@ -201,13 +205,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let result = ray_march(ray_origin_world, ray_dir_world);
 
     if is_color_picking != 0 && distance(ndc.xy, cursor_position) < 0.001 {
-        selection[0] = result.unlit_color.x;
-        selection[1] = result.unlit_color.y;
-        selection[2] = result.unlit_color.z;
+        selection[0] = result.x;
+        selection[1] = result.y;
+        selection[2] = result.z;
     }
 
 
-    return vec4<f32>(result.color, 1.0);
+    return vec4<f32>(result, 1.0);
 
 }
 
