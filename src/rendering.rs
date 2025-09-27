@@ -195,7 +195,7 @@ fn boxes_to_gpu(
         .map(|(b, selected)| GpuBox {
             position: b.position.into(),
             scale: b.scale.into(),
-            color: b.id.to_scrambled_color(),
+            color: b.color,
             logical_color: b.id.to_color(),
             selected: bool_to_gpu(selected),
             ..default()

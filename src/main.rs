@@ -1,6 +1,5 @@
 mod camera;
 mod controls;
-mod egui_ui;
 mod events;
 mod geometry;
 mod gizmos;
@@ -33,7 +32,6 @@ fn main() {
             rendering::RenderingPlugin,
             selection::SelectionPlugin,
             ui::UiPlugin,
-            egui_ui::EguiUiPlugin,
             manipulation::ManipulationPlugin,
         ))
         .run();
