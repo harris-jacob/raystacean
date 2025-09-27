@@ -12,8 +12,9 @@ const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 struct GpuBox {
     position: vec3<f32>,
     scale: vec3<f32>, 
-    logical_color: vec3<f32>,
     color: vec3<f32>,
+    rounding: f32,
+    logical_color: vec3<f32>,
     selected: f32,
 }
 
@@ -37,9 +38,9 @@ fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
     return SdfResult(d, BLUE);
 }
 
-fn sd_box(p: vec3<f32>, b: vec3<f32>, color: vec3<f32>) -> SdfResult {
-  let q = abs(p) - b;
-  let d = length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)), 0.0);
+fn sd_box(p: vec3<f32>, b: vec3<f32>, r: f32, color: vec3<f32>) -> SdfResult {
+  let q = abs(p) - b + r;
+  let d = length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)), 0.0) - r;
   return SdfResult(d, color);
 }
 
@@ -103,7 +104,7 @@ fn map(p: vec3<f32>) -> SdfResult {
         let box = boxes[i];
 
         let color = color_from_box(box);
-        let b = sd_box(p - box.position, box.scale, color);
+        let b = sd_box(p - box.position, box.scale, box.rounding, color);
 
         sdf = min_sdf(sdf, b);
     }
@@ -117,9 +118,9 @@ fn map(p: vec3<f32>) -> SdfResult {
 
 fn color_from_box(box: GpuBox) -> vec3<f32> {
     if(is_color_picking != 0) {
-        return box.color;
-    } else {
         return box.logical_color;
+    } else {
+        return box.color;
     }
 }
 
