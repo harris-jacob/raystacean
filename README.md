@@ -17,14 +17,14 @@ Inspired by [ShapeUp](https://github.com/danielchasehooper/ShapeUp-public) and [
 ## Roadmap
 Basically my Todo list.
 
-- Support for color selection (seperate logical ID colors from display colors).
-- Improved UI using egui.
-- Rounding/smoothing box geometry.
-- CSG support (union, subtract, intersection) with smooth blending.
-- Add more primatives (sphere, cylinder torus).
-- Improved environmental lighting.
-- Antialiasing grid plane.
-- Export using marching cubes.
+- [x] Support for color selection (seperate logical ID colors from display colors).
+- [x] Improved UI using egui.
+- [x] Rounding/smoothing box geometry.
+- [ ] CSG support (union, subtract, intersection) with smooth blending.
+- [ ] Add more primatives (sphere, cylinder torus).
+- [ ] Improved environmental lighting.
+- [ ] Antialiasing grid plane.
+- [ ] Export using marching cubes.
 
 ## Development
 
