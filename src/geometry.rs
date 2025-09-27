@@ -16,8 +16,8 @@ impl Plugin for GeometryPlugin {
 pub struct BoxGeometry {
     pub position: Vec3,
     pub scale: Vec3,
-    // TODO: we can use something a bit neater internally?
-    pub color: [f32;3],
+    pub color: [f32; 3],
+    pub rounding: f32,
     pub id: GeometryId,
 }
 
@@ -39,6 +39,7 @@ impl BoxGeometry {
         BoxGeometry {
             position,
             scale: Vec3::ONE * 2.5,
+            rounding: 0.0,
             color: id.to_scrambled_color(),
             id,
         }
@@ -49,6 +50,12 @@ impl BoxGeometry {
             position: self.position.with_y(y),
             ..self
         }
+    }
+
+    /// Compute rounding radius using the rounding factor and scale
+    /// of the smallest axis.
+    pub fn rounding_radius(&self) -> f32 {
+        self.rounding * self.scale.x.min(self.scale.y).min(self.scale.z)
     }
 }
 

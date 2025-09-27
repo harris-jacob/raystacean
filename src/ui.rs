@@ -52,27 +52,33 @@ fn inspector_ui(
                 .corner_radius(5.0)
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
-                    egui::Grid::new("properties")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.label("Position");
+                    egui::Grid::new("properties").striped(true).show(ui, |ui| {
+                        ui.label("Position");
+                        ui.horizontal(|ui| {
                             ui.add(egui::DragValue::new(&mut selected.position.x).speed(0.1));
                             ui.add(egui::DragValue::new(&mut selected.position.y).speed(0.1));
                             ui.add(egui::DragValue::new(&mut selected.position.z).speed(0.1));
-                            ui.end_row();
+                        });
+                        ui.end_row();
 
-                            ui.label("Scale");
+                        ui.label("Scale");
+                        ui.horizontal(|ui| {
                             ui.add(egui::DragValue::new(&mut selected.scale.x).speed(0.1));
                             ui.add(egui::DragValue::new(&mut selected.scale.y).speed(0.1));
                             ui.add(egui::DragValue::new(&mut selected.scale.z).speed(0.1));
-                            ui.end_row();
                         });
-
-                    egui::Grid::new("color").show(ui, |ui| {
-                        ui.label("Picker");
-                        ui.color_edit_button_rgb(&mut selected.color);
                         ui.end_row();
-                    })
+
+                        ui.label("Picker");
+                        ui.horizontal(|ui| {
+                            ui.color_edit_button_rgb(&mut selected.color);
+                        });
+                        ui.end_row();
+
+                        ui.label("Rounding");
+                        ui.add(egui::Slider::new(&mut selected.rounding, 0.0..=1.0));
+                        ui.end_row();
+                    });
                 });
         });
     }

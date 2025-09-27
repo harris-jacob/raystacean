@@ -196,6 +196,7 @@ fn boxes_to_gpu(
             position: b.position.into(),
             scale: b.scale.into(),
             color: b.color,
+            rounding_radius: b.rounding_radius(),
             logical_color: b.id.to_color(),
             selected: bool_to_gpu(selected),
             ..default()
@@ -233,7 +234,7 @@ pub struct GpuBox {
     pub scale: [f32; 3],
     _pad2: f32,
     pub color: [f32; 3],
-    _pad3: f32,
+    pub rounding_radius: f32,
     pub logical_color: [f32; 3],
     pub selected: u32,
 }
