@@ -16,6 +16,8 @@ impl Plugin for GeometryPlugin {
 pub struct BoxGeometry {
     pub position: Vec3,
     pub scale: Vec3,
+    // TODO: we can use something a bit neater internally?
+    pub color: [f32;3],
     pub id: GeometryId,
 }
 
@@ -33,10 +35,12 @@ impl GlobalId {
 
 impl BoxGeometry {
     fn new(position: Vec3, id: u32) -> Self {
+        let id = GeometryId::new(id);
         BoxGeometry {
             position,
             scale: Vec3::ONE * 2.5,
-            id: GeometryId::new(id),
+            color: id.to_scrambled_color(),
+            id,
         }
     }
 
@@ -50,7 +54,7 @@ impl BoxGeometry {
 
 fn place_box(
     _trigger: Trigger<events::PlaneClicked>,
-    control_mode: Res<controls::ControlMode>,
+    mut control_mode: ResMut<controls::ControlMode>,
     windows: Query<&Window>,
     camera: Query<(&Projection, &Transform), With<camera::MainCamera>>,
     mut global_id: ResMut<GlobalId>,
@@ -72,6 +76,8 @@ fn place_box(
         // sit the box on the  plane rather than putting the center on it
         let y = geometry.scale.y;
         commands.spawn(geometry.with_y(y));
+
+        *control_mode = controls::ControlMode::Select;
     };
 }
 
