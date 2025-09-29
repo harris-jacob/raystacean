@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{controls, events, geometry};
+use crate::{controls, events, geometry, node_id};
 
 pub struct SelectionPlugin;
 
@@ -18,23 +18,42 @@ fn box_selection(
     control_mode: Res<controls::ControlMode>,
     selected: Query<Entity, With<Selected>>,
     boxes: Query<(Entity, &geometry::BoxGeometry)>,
-    mut ev: EventReader<events::PixelColorUnderCursor>,
+    ev: EventReader<events::PixelColorUnderCursor>,
     mut commands: Commands,
 ) {
-    if *control_mode != controls::ControlMode::Select {
-        return;
-    }
+    match control_mode.selection_policy() {
+        controls::SelectionPolicy::None => {}
+        controls::SelectionPolicy::Single => {
+            deselect_selected(selected, &mut commands);
 
-    // deselect existing
-    for entity in selected.iter() {
-        commands.entity(entity).remove::<Selected>();
-    }
+            select_under_cursor(ev, commands, boxes);
+        }
+        controls::SelectionPolicy::Multi(size) => {
+            if selected.iter().len() > size {
+                return;
+            }
 
+            select_under_cursor(ev, commands, boxes);
+        }
+    }
+}
+
+fn select_under_cursor(
+    mut ev: EventReader<events::PixelColorUnderCursor>,
+    mut commands: Commands,
+    boxes: Query<(Entity, &geometry::BoxGeometry)>,
+) {
     if let Some(latest) = ev.read().last() {
-        let id = geometry::GeometryId::from_color(latest.color());
+        let id = node_id::NodeId::from_color(latest.color());
 
         if let Some(newly_selected) = boxes.iter().find(|(_, geometry)| geometry.id == id) {
             commands.entity(newly_selected.0).insert(Selected);
         }
+    }
+}
+
+fn deselect_selected(selected: Query<Entity, With<Selected>>, commands: &mut Commands) {
+    for entity in selected.iter() {
+        commands.entity(entity).remove::<Selected>();
     }
 }

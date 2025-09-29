@@ -11,11 +11,11 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(EguiPlugin::default())
-            .add_systems(EguiPrimaryContextPass, (add_geometry_tool, inspector_ui));
+            .add_systems(EguiPrimaryContextPass, (toolbar_ui, inspector_ui));
     }
 }
 
-pub fn add_geometry_tool(
+pub fn toolbar_ui(
     mut contexts: EguiContexts,
     mut control_mode: ResMut<controls::ControlMode>,
 ) -> Result {
@@ -24,15 +24,32 @@ pub fn add_geometry_tool(
     egui::Area::new("toolbar".into())
         .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -10.0])
         .show(ctx, |ui| {
-            let text = RichText::new("+").size(24.0).strong();
+            let add_text = RichText::new("➕").size(24.0).strong();
 
-            let button = egui::Button::new(text)
+            let add_geometry_button = egui::Button::new(add_text)
+                .min_size(egui::vec2(50.0, 50.0))
+                .corner_radius(20.0);
+
+            let union_text = RichText::new("🧩").size(24.0).strong();
+
+            let begin_union_button = egui::Button::new(union_text)
                 .min_size(egui::vec2(50.0, 50.0))
                 .corner_radius(20.0);
 
             ui.horizontal(|ui| {
-                if ui.add(button).on_hover_text("add geometry").clicked() {
+                if ui
+                    .add(add_geometry_button)
+                    .on_hover_text("add geometry")
+                    .clicked()
+                {
                     *control_mode = controls::ControlMode::PlaceGeometry;
+                }
+                if ui
+                    .add(begin_union_button)
+                    .on_hover_text("begin union")
+                    .clicked()
+                {
+                    *control_mode = controls::ControlMode::UnionSelect;
                 }
             });
         });
@@ -43,7 +60,13 @@ pub fn add_geometry_tool(
 fn inspector_ui(
     mut contexts: EguiContexts,
     mut selected: Query<&mut geometry::BoxGeometry, With<selection::Selected>>,
+    control_mode: Res<controls::ControlMode>,
 ) -> Result {
+    // We only want to show this ui in select mode
+    if *control_mode != controls::ControlMode::Select {
+        return Ok(());
+    }
+
     let context = contexts.ctx_mut()?;
     if let Ok(mut selected) = selected.single_mut() {
         egui::Window::new("Box").show(context, |ui| {

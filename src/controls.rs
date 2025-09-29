@@ -14,6 +14,7 @@ impl Plugin for ControlContextPlugin {
 pub enum ControlMode {
     Select,
     PlaceGeometry,
+    UnionSelect,
 }
 
 #[derive(Resource, Debug, PartialEq, Eq, Clone, Copy)]
@@ -21,6 +22,23 @@ pub enum ControlIntent {
     Panning,
     Orbitting,
     None,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum SelectionPolicy {
+    None,
+    Single,
+    Multi(usize),
+}
+
+impl ControlMode {
+    pub fn selection_policy(&self) -> SelectionPolicy {
+        match self {
+            ControlMode::Select => SelectionPolicy::Single,
+            ControlMode::PlaceGeometry => SelectionPolicy::None,
+            ControlMode::UnionSelect => SelectionPolicy::Multi(2),
+        }
+    }
 }
 
 /// Centralized system for resolving control intent, ensuring that only one user

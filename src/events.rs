@@ -1,10 +1,17 @@
 use bevy::prelude::*;
 
+use crate::node_id;
+
 #[derive(Event, Debug)]
 pub struct PixelColorUnderCursor(Vec3);
 
 #[derive(Event, Debug)]
 pub struct PlaneClicked;
+
+#[derive(Event, Debug)]
+pub struct GeometryAdded {
+    pub id: node_id::NodeId,
+}
 
 #[derive(Event, Debug)]
 pub struct OriginDragged {
@@ -15,7 +22,7 @@ pub struct OriginDragged {
 #[derive(Event, Debug)]
 pub struct ScalingGizmoDragged {
     pub axis: Vec3,
-    pub delta: Vec2
+    pub delta: Vec2,
 }
 
 impl PixelColorUnderCursor {
