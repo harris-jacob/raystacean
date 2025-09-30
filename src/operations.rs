@@ -9,21 +9,21 @@ use crate::{
 };
 
 #[derive(Resource, Default, Debug)]
-struct OperationsForest {
-    roots: Vec<Node>,
+pub struct OperationsForest {
+    pub roots: Vec<Node>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-enum Node {
+pub enum Node {
     Geometry(node_id::NodeId),
     Union(Union),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct Union {
-    id: node_id::NodeId,
-    left: Arc<Node>,
-    right: Arc<Node>,
+pub struct Union {
+    pub id: node_id::NodeId,
+    pub left: Arc<Node>,
+    pub right: Arc<Node>,
 }
 
 pub struct OperationsPlugin;
@@ -59,7 +59,7 @@ fn perform_union(
     }
 
     let left = operations
-        .take_root_of(&selected.iter().nth(0).expect("exists").0.id)
+        .take_root_of(&selected.iter().next().expect("exists").0.id)
         .expect("exists");
     // TODO: could be that the two selected items belong to the same root, which means
     // they are already part of a heirarchy of CSG operations, this is not valid but I need
@@ -78,7 +78,7 @@ fn perform_union(
 
     dbg!(&operations);
 
-    // Deselect entity. TODO: should we move this to selection plugin?
+    // TODO: get working with event
     for (_, entity) in selected.iter() {
         commands.entity(entity).remove::<selection::Selected>();
     }

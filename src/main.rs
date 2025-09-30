@@ -22,6 +22,7 @@ fn main() {
         .add_event::<events::PlaneClicked>()
         .add_event::<events::OriginDragged>()
         .add_event::<events::GeometryAdded>()
+        .add_event::<events::Deselect>()
         .add_event::<events::ScalingGizmoDragged>()
         .add_plugins(DefaultPlugins.set(LogPlugin {
             level: bevy::log::Level::DEBUG,

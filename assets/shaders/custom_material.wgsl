@@ -9,13 +9,20 @@ const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
 const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
-struct GpuBox {
+struct GpuPrimative {
     position: vec3<f32>,
     scale: vec3<f32>, 
     color: vec3<f32>,
     rounding: f32,
     logical_color: vec3<f32>,
     selected: f32,
+}
+
+struct GpuOp {
+    kind: u32,
+    left: u32,
+    right: u32,
+    primative_idnex: u32,
 }
 
 @group(2) @binding(0)
@@ -29,8 +36,10 @@ var<uniform> cursor_position: vec2<f32>;
 @group(2) @binding(4)
 var<uniform> is_color_picking: u32;
 @group(2) @binding(5)
-var<storage, read> boxes: array<GpuBox>;
+var<storage, read> boxes: array<GpuPrimative>;
 @group(2) @binding(6)
+var<storage, read> operations: array<GpuOp>;
+@group(2) @binding(7)
 var<storage, read_write> selection: array<f32>;
 
 fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
@@ -116,7 +125,7 @@ fn map(p: vec3<f32>) -> SdfResult {
     return sdf;
 }
 
-fn color_from_box(box: GpuBox) -> vec3<f32> {
+fn color_from_box(box: GpuPrimative) -> vec3<f32> {
     if(is_color_picking != 0) {
         return box.logical_color;
     } else {

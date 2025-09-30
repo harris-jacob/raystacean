@@ -9,6 +9,9 @@ pub struct PixelColorUnderCursor(Vec3);
 pub struct PlaneClicked;
 
 #[derive(Event, Debug)]
+pub struct Deselect;
+
+#[derive(Event, Debug)]
 pub struct GeometryAdded {
     pub id: node_id::NodeId,
 }
