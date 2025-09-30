@@ -35,6 +35,7 @@ fn main() {
             gizmos::GizmosPlugin,
             global_id::GlobalIdPlugin,
             manipulation::ManipulationPlugin,
+            operations::OperationsPlugin,
             rendering::RenderingPlugin,
             selection::SelectionPlugin,
             ui::UiPlugin,

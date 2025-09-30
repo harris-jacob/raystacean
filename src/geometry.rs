@@ -52,7 +52,6 @@ fn place_box(
     camera: Query<(&Projection, &Transform), With<camera::MainCamera>>,
     mut global_id: ResMut<global_id::GlobalId>,
     mut commands: Commands,
-    mut event_writer: EventWriter<events::GeometryAdded>,
 ) {
     if *control_mode != controls::ControlMode::PlaceGeometry {
         return;
@@ -69,7 +68,8 @@ fn place_box(
         let geometry = BoxGeometry::new(hit, global_id.next());
         // sit the box on the  plane rather than putting the center on it
         let y = geometry.scale.y;
-        event_writer.write(events::GeometryAdded { id: geometry.id });
+
+        commands.trigger(events::GeometryAdded { id: geometry.id });
 
         commands.spawn(geometry.with_y(y));
 
