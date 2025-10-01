@@ -63,6 +63,7 @@ fn setup(
 
     let primatives = buffers.add(ShaderStorageBuffer::default());
     let operations = buffers.add(ShaderStorageBuffer::default());
+    let op_roots = buffers.add(ShaderStorageBuffer::from(Vec::<u32>::new()));
 
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
@@ -77,6 +78,7 @@ fn setup(
         is_color_picking: LIT_PASS,
         primatives: primatives.clone(),
         operations: operations.clone(),
+        op_roots: op_roots.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
     });
@@ -88,6 +90,7 @@ fn setup(
         is_color_picking: COLOR_PICKING_PASS,
         primatives: primatives.clone(),
         operations: operations.clone(),
+        op_roots: op_roots.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
     });
@@ -104,6 +107,7 @@ fn setup(
 
     commands.insert_resource(PrimativesBufferHandle(primatives));
     commands.insert_resource(OperationsBufferHandle(operations));
+    commands.insert_resource(OpRootsBufferHandle(op_roots));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -196,13 +200,16 @@ fn ops_to_gpu(
     // TODO: trigger on event
     primatives: Query<&geometry::BoxGeometry>,
     forest: Res<operations::OperationsForest>,
-    buffer_handle: Res<OperationsBufferHandle>,
+    ops_buffer_handle: Res<OperationsBufferHandle>,
+    roots_buffer_handle: Res<OpRootsBufferHandle>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
-    let buffer = buffer_handle.get_mut(&mut buffers);
-    let gpu_data = flatten_postorder(forest, &primatives);
+    let (gpu_ops, gpu_roots) = flatten_postorder(forest, &primatives);
+    let ops_buffer = ops_buffer_handle.get_mut(&mut buffers);
+    ops_buffer.set_data(gpu_ops);
 
-    buffer.set_data(gpu_data);
+    let roots_buffer = roots_buffer_handle.get_mut(&mut buffers);
+    roots_buffer.set_data(gpu_roots);
 }
 
 fn boxes_to_gpu(
@@ -262,7 +269,7 @@ pub struct GpuPrimative {
 }
 
 #[repr(C)]
-#[derive(Clone, ShaderType, Default)]
+#[derive(Clone, ShaderType, Default, Debug)]
 struct GpuOp {
     kind: u32,            // 0 = primative, 1 = union
     left: u32,            // left child index into OP for union (invalid for primative)
@@ -286,7 +293,9 @@ pub struct SceneMaterial {
     pub primatives: Handle<ShaderStorageBuffer>,
     #[storage(6, read_only)]
     pub operations: Handle<ShaderStorageBuffer>,
-    #[storage(7)]
+    #[storage(7, read_only)]
+    pub op_roots: Handle<ShaderStorageBuffer>,
+    #[storage(8)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 
@@ -298,6 +307,9 @@ pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
 
 #[derive(Resource)]
 pub struct OperationsBufferHandle(Handle<ShaderStorageBuffer>);
+
+#[derive(Resource)]
+pub struct OpRootsBufferHandle(Handle<ShaderStorageBuffer>);
 
 impl PrimativesBufferHandle {
     pub fn get_mut<'a>(
@@ -321,28 +333,35 @@ impl OperationsBufferHandle {
     }
 }
 
+impl OpRootsBufferHandle {
+    pub fn get_mut<'a>(
+        &self,
+        assets: &'a mut Assets<ShaderStorageBuffer>,
+    ) -> &'a mut ShaderStorageBuffer {
+        assets
+            .get_mut(&self.0)
+            .expect("OpRootsStorageBuffer should exist")
+    }
+}
+
 impl Material for SceneMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/custom_material.wgsl".into()
     }
 }
 
-struct FlattenResult {
-    pub nodes: Vec<GpuOp>,
-    pub root_index: u32,
-}
-
 fn flatten_postorder(
     forest: Res<operations::OperationsForest>,
     primatives: &Query<&geometry::BoxGeometry>,
-) -> Vec<GpuOp> {
-    let mut out = Vec::new();
+) -> (Vec<GpuOp>, Vec<u32>) {
+    let mut ops = Vec::new();
+    let mut roots = Vec::new();
 
     for root in forest.roots.iter() {
-        flatten_node(root, primatives, &mut out);
+        roots.push(flatten_node(root, primatives, &mut ops));
     }
 
-    out
+    (ops, roots)
 }
 
 fn flatten_node(
@@ -354,13 +373,15 @@ fn flatten_node(
         operations::Node::Geometry(node_id) => {
             let idx = geometry_index_by_id(primatives, node_id);
 
+            let op_index = out.len() as u32;
+
             out.push(GpuOp {
                 kind: 0,
                 primative_index: idx,
                 ..default()
             });
 
-            idx
+            op_index
         }
         operations::Node::Union(union) => {
             let l_idx = flatten_node(&union.left, primatives, out);

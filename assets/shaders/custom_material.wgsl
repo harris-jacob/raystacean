@@ -22,7 +22,7 @@ struct GpuOp {
     kind: u32,
     left: u32,
     right: u32,
-    primative_idnex: u32,
+    primative_index: u32,
 }
 
 @group(2) @binding(0)
@@ -36,11 +36,16 @@ var<uniform> cursor_position: vec2<f32>;
 @group(2) @binding(4)
 var<uniform> is_color_picking: u32;
 @group(2) @binding(5)
-var<storage, read> boxes: array<GpuPrimative>;
+var<storage, read> primatives: array<GpuPrimative>;
 @group(2) @binding(6)
 var<storage, read> operations: array<GpuOp>;
 @group(2) @binding(7)
+var<storage, read> op_roots: array<u32>;
+@group(2) @binding(8)
 var<storage, read_write> selection: array<f32>;
+
+
+var<private> results: array<SdfResult, 10>;
 
 fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -107,15 +112,56 @@ struct SdfResult {
 }
 
 fn map(p: vec3<f32>) -> SdfResult {
+    if (is_color_picking != 0) {
+        return map2(p);
+    } else {
+        return map3(p);
+    }
+}
+
+fn map2(p: vec3<f32>) -> SdfResult {
     var sdf = SdfResult(100.0, BLACK);
 
-    for (var i = 0u; i < arrayLength(&boxes); i++) {
-        let box = boxes[i];
+    for (var i = 0u; i < arrayLength(&primatives); i++) {
+        let box = primatives[i];
 
         let color = color_from_box(box);
         let b = sd_box(p - box.position, box.scale, box.rounding, color);
 
         sdf = min_sdf(sdf, b);
+    }
+
+    if(is_color_picking == 0) {
+        sdf =  min_sdf(sd_ground(p), sdf);
+    }
+
+    return sdf;
+}
+
+fn map3(p: vec3<f32>) -> SdfResult {
+
+    for (var i: u32 = 0u; i < arrayLength(&operations); i = i + 1u) {
+        let node = operations[i];
+
+        if (node.kind == 0u) {
+            let prim = primatives[node.primative_index];
+            let color = color_from_box(prim);
+            results[i] = sd_box(p - prim.position, prim.scale, prim.rounding, color);
+
+        } else if (node.kind == 1u) { // union
+            results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, 0.5);
+            // TODO: eventually provide a color override for ops
+            results[i].color = results[node.left].color;
+        }
+    }
+
+    var sdf = SdfResult(100.0, BLACK);
+
+    for (var i = 0u;  i < arrayLength(&op_roots); i = i + 1u) {
+        let idx = op_roots[i];
+        let operation_sdf = results[idx];
+
+        sdf = min_sdf(sdf, operation_sdf);
     }
 
     if(is_color_picking == 0) {
@@ -137,6 +183,13 @@ fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
     let inverted = SdfResult(-s1.dist, s1.color);
 
     return max_sdf(inverted, s2);
+}
+
+fn op_smooth_union(s1: f32, s2: f32, b: f32) -> f32 {
+    let k = b * 4.0;
+    let h = max(k - abs(s1 - s2), 0.0);
+
+    return min(s1, s2) - h*h*0.25/k;
 }
 
 fn min_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {

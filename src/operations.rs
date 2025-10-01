@@ -44,7 +44,7 @@ fn on_geometry_added(
 }
 
 fn perform_union(
-    control_mode: Res<controls::ControlMode>,
+    mut control_mode: ResMut<controls::ControlMode>,
     selected: Query<(&geometry::BoxGeometry, Entity), With<selection::Selected>>,
     mut operations: ResMut<OperationsForest>,
     mut new_id: ResMut<global_id::GlobalId>,
@@ -76,12 +76,13 @@ fn perform_union(
 
     operations.insert_root(node);
 
-    dbg!(&operations);
-
     // TODO: get working with event
     for (_, entity) in selected.iter() {
         commands.entity(entity).remove::<selection::Selected>();
     }
+
+    // TODO: a bit untidy
+    *control_mode = controls::ControlMode::Select;
 }
 
 impl OperationsForest {
