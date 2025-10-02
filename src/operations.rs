@@ -1,29 +1,24 @@
-use std::sync::Arc;
-
 use bevy::prelude::*;
 
-use crate::{
-    controls, events, geometry,
-    global_id::{self, GlobalId},
-    node_id, selection,
-};
+use crate::{controls, events, geometry, global_id, node_id, selection};
 
 #[derive(Resource, Default, Debug)]
 pub struct OperationsForest {
     pub roots: Vec<Node>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Node {
     Geometry(node_id::NodeId),
     Union(Union),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Union {
     pub id: node_id::NodeId,
-    pub left: Arc<Node>,
-    pub right: Arc<Node>,
+    pub left: Box<Node>,
+    pub right: Box<Node>,
+    pub blend: f32,
 }
 
 pub struct OperationsPlugin;
@@ -59,39 +54,43 @@ fn perform_union(
     }
 
     let left = operations
-        .take_root_of(&selected.iter().next().expect("exists").0.id)
-        .expect("exists");
-    // TODO: could be that the two selected items belong to the same root, which means
-    // they are already part of a heirarchy of CSG operations, this is not valid but I need
-    // to figure out how to handle it.
+        .find_root_index(&selected.iter().next().expect("exists").0.id)
+        .expect("Node does not exists in tree");
     let right = operations
-        .take_root_of(&selected.iter().nth(1).expect("exists").0.id)
-        .expect("exists");
+        .find_root_index(&selected.iter().nth(1).expect("exists").0.id)
+        .expect("Node does not exist in tree");
+
+    // The Nodes already belong to the same root (union operation doesn't make
+    // sense)
+    if left == right {
+        commands.trigger(events::UnionOperationErrored);
+        *control_mode = controls::ControlMode::Select;
+        return;
+    }
+
+    let left = operations.take_root(left);
+    let right = operations.take_root(right);
 
     let node = Node::Union(Union {
         id: node_id::NodeId::new(new_id.next()),
-        left: Arc::new(left),
-        right: Arc::new(right),
+        left: Box::new(left),
+        right: Box::new(right),
+        blend: 0.0,
     });
 
     operations.insert_root(node);
+    commands.trigger(events::UnionOperationPerformed);
 
-    // TODO: get working with event
-    for (_, entity) in selected.iter() {
-        commands.entity(entity).remove::<selection::Selected>();
-    }
-
-    // TODO: a bit untidy
     *control_mode = controls::ControlMode::Select;
 }
 
 impl OperationsForest {
-    fn take_root_of(&mut self, target: &node_id::NodeId) -> Option<Node> {
-        if let Some(idx) = self.roots.iter().position(|node| node.contains(target)) {
-            Some(self.roots.remove(idx))
-        } else {
-            None
-        }
+    fn take_root(&mut self, idx: usize) -> Node {
+        self.roots.remove(idx)
+    }
+
+    fn find_root_index(&self, target: &node_id::NodeId) -> Option<usize> {
+        self.roots.iter().position(|node| node.contains(target))
     }
 
     fn insert_root(&mut self, node: Node) {

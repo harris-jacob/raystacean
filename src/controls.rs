@@ -6,7 +6,10 @@ impl Plugin for ControlContextPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ControlMode::Select)
             .insert_resource(ControlIntent::None)
-            .add_systems(Update, resolve_control_intent);
+            .add_systems(
+                Update,
+                (resolve_control_intent, revert_to_selection_on_escape),
+            );
     }
 }
 
@@ -38,6 +41,15 @@ impl ControlMode {
             ControlMode::PlaceGeometry => SelectionPolicy::None,
             ControlMode::UnionSelect => SelectionPolicy::Multi(2),
         }
+    }
+}
+
+fn revert_to_selection_on_escape(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut control_mode: ResMut<ControlMode>,
+) {
+    if keys.pressed(KeyCode::Escape) {
+        *control_mode = ControlMode::Select;
     }
 }
 

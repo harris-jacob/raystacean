@@ -23,6 +23,7 @@ struct GpuOp {
     left: u32,
     right: u32,
     primative_index: u32,
+    blend: f32
 }
 
 @group(2) @binding(0)
@@ -45,7 +46,7 @@ var<storage, read> op_roots: array<u32>;
 var<storage, read_write> selection: array<f32>;
 
 
-var<private> results: array<SdfResult, 10>;
+var<private> results: array<SdfResult, 100>;
 
 fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -149,7 +150,7 @@ fn map3(p: vec3<f32>) -> SdfResult {
             results[i] = sd_box(p - prim.position, prim.scale, prim.rounding, color);
 
         } else if (node.kind == 1u) { // union
-            results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, 0.5);
+            results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, node.blend);
             // TODO: eventually provide a color override for ops
             results[i].color = results[node.left].color;
         }
@@ -185,7 +186,12 @@ fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
     return max_sdf(inverted, s2);
 }
 
+// quadratic polynomial with fallback to min
 fn op_smooth_union(s1: f32, s2: f32, b: f32) -> f32 {
+    if(b == 0.0) {
+        return min(s1, s2);
+    }
+
     let k = b * 4.0;
     let h = max(k - abs(s1 - s2), 0.0);
 

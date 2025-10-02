@@ -4,14 +4,25 @@ use bevy_egui::{
     egui::{self, RichText},
 };
 
-use crate::{controls, geometry, selection};
+use crate::{
+    controls, geometry, node_id,
+    operations::{self, OperationsForest},
+    selection,
+};
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin::default())
-            .add_systems(EguiPrimaryContextPass, (toolbar_ui, inspector_ui));
+        app.add_plugins(EguiPlugin::default()).add_systems(
+            EguiPrimaryContextPass,
+            (
+                toolbar_ui,
+                inspector_ui,
+                union_tooltip,
+                place_geometry_tooltop,
+            ),
+        );
     }
 }
 
@@ -30,12 +41,6 @@ pub fn toolbar_ui(
                 .min_size(egui::vec2(50.0, 50.0))
                 .corner_radius(20.0);
 
-            let union_text = RichText::new("🧩").size(24.0).strong();
-
-            let begin_union_button = egui::Button::new(union_text)
-                .min_size(egui::vec2(50.0, 50.0))
-                .corner_radius(20.0);
-
             ui.horizontal(|ui| {
                 if ui
                     .add(add_geometry_button)
@@ -43,13 +48,6 @@ pub fn toolbar_ui(
                     .clicked()
                 {
                     *control_mode = controls::ControlMode::PlaceGeometry;
-                }
-                if ui
-                    .add(begin_union_button)
-                    .on_hover_text("begin union")
-                    .clicked()
-                {
-                    *control_mode = controls::ControlMode::UnionSelect;
                 }
             });
         });
@@ -60,7 +58,8 @@ pub fn toolbar_ui(
 fn inspector_ui(
     mut contexts: EguiContexts,
     mut selected: Query<&mut geometry::BoxGeometry, With<selection::Selected>>,
-    control_mode: Res<controls::ControlMode>,
+    operations: ResMut<OperationsForest>,
+    mut control_mode: ResMut<controls::ControlMode>,
 ) -> Result {
     // We only want to show this ui in select mode
     if *control_mode != controls::ControlMode::Select {
@@ -101,10 +100,110 @@ fn inspector_ui(
                         ui.label("Rounding");
                         ui.add(egui::Slider::new(&mut selected.rounding, 0.0..=1.0));
                         ui.end_row();
+
+                        let union_text = RichText::new("union").size(14.0);
+                        let begin_union_button = egui::Button::new(union_text);
+
+                        ui.label("Actions");
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(begin_union_button)
+                                .on_hover_text("begin union")
+                                .clicked()
+                            {
+                                *control_mode = controls::ControlMode::UnionSelect;
+                            }
+                        });
                     });
                 });
+
+            ui.end_row();
+
+            ui.add_space(12.0);
+
+            ui.label(egui::RichText::new("Operations").heading());
+
+            ui.add_space(4.0);
+
+            egui::Grid::new("Operations list")
+                .striped(true)
+                .show(ui, |ui| {
+                    show_unions_for_selected(ui, operations, selected);
+                })
         });
     }
 
     Ok(())
+}
+
+fn union_tooltip(mut contexts: EguiContexts, control_mode: Res<controls::ControlMode>) -> Result {
+    if *control_mode != controls::ControlMode::UnionSelect {
+        return Ok(());
+    }
+
+    let ctx = contexts.ctx_mut()?;
+
+    egui::Window::new("Union Mode")
+        .title_bar(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_TOP, [0.0, 10.0])
+        .show(ctx, |ui| {
+            ui.label("Select a second primative to create a Union");
+            ui.label("Press esc to cancel");
+        });
+
+    Ok(())
+}
+
+fn place_geometry_tooltop(
+    mut contexts: EguiContexts,
+    control_mode: Res<controls::ControlMode>,
+) -> Result {
+    if *control_mode != controls::ControlMode::PlaceGeometry {
+        return Ok(());
+    }
+
+    let ctx = contexts.ctx_mut()?;
+
+    egui::Window::new("Add Geometry Mode")
+        .title_bar(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_TOP, [0.0, 10.0])
+        .show(ctx, |ui| {
+            ui.label("Select a spot on the plane to place geometry");
+            ui.label("Press esc to cancel");
+        });
+
+    Ok(())
+}
+
+fn show_unions_for_selected(
+    ui: &mut egui::Ui,
+    mut operations: ResMut<OperationsForest>,
+    selected: Mut<geometry::BoxGeometry>,
+) {
+    for root in operations.roots.iter_mut() {
+        show_unions_for_primitive(ui, root, selected.id);
+    }
+}
+
+fn show_unions_for_primitive(
+    ui: &mut egui::Ui,
+    node: &mut operations::Node,
+    target: node_id::NodeId,
+) -> bool {
+    match node {
+        operations::Node::Geometry(id) => *id == target,
+        operations::Node::Union(union) => {
+            if show_unions_for_primitive(ui, &mut union.left, target)
+                || show_unions_for_primitive(ui, &mut union.right, target)
+            {
+                ui.label(format!("Union {}", union.id));
+                ui.add(egui::Slider::new(&mut union.blend, 0.0..=1.0));
+                ui.end_row();
+                return true;
+            }
+            false
+        }
+    }
 }

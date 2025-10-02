@@ -9,16 +9,11 @@ pub struct Selected;
 
 impl Plugin for SelectionPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.add_observer(box_selection).add_observer(deselect);
+        app.add_observer(box_selection)
+            .add_observer(on_geometry_added)
+            .add_observer(on_union_performed)
+            .add_observer(on_union_errored);
     }
-}
-
-fn deselect(
-    _trigger: Trigger<events::Deselect>,
-    selected: Query<Entity, With<Selected>>,
-    mut commands: Commands,
-) {
-    deselect_selected(selected, &mut commands);
 }
 
 fn box_selection(
@@ -58,6 +53,30 @@ fn select_under_cursor(
             commands.entity(newly_selected.0).insert(Selected);
         }
     }
+}
+
+fn on_union_performed(
+    event: Trigger<events::UnionOperationPerformed>,
+    selected: Query<Entity, With<Selected>>,
+    mut commands: Commands,
+) {
+    deselect_selected(selected, &mut commands);
+}
+fn on_union_errored(
+    event: Trigger<events::UnionOperationErrored>,
+    selected: Query<Entity, With<Selected>>,
+    mut commands: Commands,
+) {
+    deselect_selected(selected, &mut commands);
+}
+
+fn on_geometry_added(
+    event: Trigger<events::GeometryAdded>,
+    selected: Query<Entity, With<Selected>>,
+    mut commands: Commands,
+) {
+    deselect_selected(selected, &mut commands);
+    commands.entity(event.entity).insert(Selected);
 }
 
 fn deselect_selected(selected: Query<Entity, With<Selected>>, commands: &mut Commands) {

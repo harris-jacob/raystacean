@@ -1,7 +1,14 @@
 use bevy::prelude::*;
+use std::fmt::Display;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeId(u32);
+
+impl Display for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl NodeId {
     pub fn new(id: u32) -> Self {

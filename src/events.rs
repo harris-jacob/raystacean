@@ -9,12 +9,16 @@ pub struct PixelColorUnderCursor(Vec3);
 pub struct PlaneClicked;
 
 #[derive(Event, Debug)]
-pub struct Deselect;
-
-#[derive(Event, Debug)]
 pub struct GeometryAdded {
+    pub entity: Entity,
     pub id: node_id::NodeId,
 }
+
+#[derive(Event, Debug)]
+pub struct UnionOperationPerformed;
+
+#[derive(Event, Debug)]
+pub struct UnionOperationErrored;
 
 #[derive(Event, Debug)]
 pub struct OriginDragged {

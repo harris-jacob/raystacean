@@ -69,9 +69,14 @@ fn place_box(
         // sit the box on the  plane rather than putting the center on it
         let y = geometry.scale.y;
 
-        commands.trigger(events::GeometryAdded { id: geometry.id });
+        let geometry_id = geometry.id;
 
-        commands.spawn(geometry.with_y(y));
+        let entity_id = commands.spawn(geometry.with_y(y)).id();
+
+        commands.trigger(events::GeometryAdded {
+            id: geometry_id,
+            entity: entity_id,
+        });
 
         *control_mode = controls::ControlMode::Select;
     };
