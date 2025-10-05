@@ -275,6 +275,7 @@ struct GpuOp {
     left: u32,            // left child index into OP for union (invalid for primative)
     right: u32,           // left child index into OP for union (invalid for primative)
     primative_index: u32, // for primatives, index into primative buffer
+    color: [f32; 3],
     blend: f32,
 }
 
@@ -390,12 +391,12 @@ fn flatten_node(
 
             let op_index = out.len() as u32;
 
-            dbg!(union.blend);
             out.push(GpuOp {
                 kind: 1,
                 left: l_idx,
                 right: r_idx,
                 blend: union.blend,
+                color: union.color,
                 ..default()
             });
 

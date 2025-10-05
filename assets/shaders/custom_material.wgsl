@@ -23,7 +23,8 @@ struct GpuOp {
     left: u32,
     right: u32,
     primative_index: u32,
-    blend: f32
+    color: vec3<f32>,
+    blend: f32,
 }
 
 @group(2) @binding(0)
@@ -151,8 +152,7 @@ fn map3(p: vec3<f32>) -> SdfResult {
 
         } else if (node.kind == 1u) { // union
             results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, node.blend);
-            // TODO: eventually provide a color override for ops
-            results[i].color = results[node.left].color;
+            results[i].color = node.color;
         }
     }
 

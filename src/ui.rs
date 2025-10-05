@@ -58,7 +58,7 @@ pub fn toolbar_ui(
 fn inspector_ui(
     mut contexts: EguiContexts,
     mut selected: Query<&mut geometry::BoxGeometry, With<selection::Selected>>,
-    operations: ResMut<OperationsForest>,
+    mut operations: ResMut<OperationsForest>,
     mut control_mode: ResMut<controls::ControlMode>,
 ) -> Result {
     // We only want to show this ui in select mode
@@ -74,47 +74,45 @@ fn inspector_ui(
                 .corner_radius(5.0)
                 .inner_margin(egui::Margin::same(8))
                 .show(ui, |ui| {
-                    egui::Grid::new("properties").striped(true).show(ui, |ui| {
-                        ui.label("Position");
-                        ui.horizontal(|ui| {
-                            ui.add(egui::DragValue::new(&mut selected.position.x).speed(0.1));
-                            ui.add(egui::DragValue::new(&mut selected.position.y).speed(0.1));
-                            ui.add(egui::DragValue::new(&mut selected.position.z).speed(0.1));
+                    egui::Grid::new("properties")
+                        .striped(true)
+                        .show(ui, |mut ui| {
+                            ui.label("Position");
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut selected.position.x).speed(0.1));
+                                ui.add(egui::DragValue::new(&mut selected.position.y).speed(0.1));
+                                ui.add(egui::DragValue::new(&mut selected.position.z).speed(0.1));
+                            });
+                            ui.end_row();
+
+                            ui.label("Scale");
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut selected.scale.x).speed(0.1));
+                                ui.add(egui::DragValue::new(&mut selected.scale.y).speed(0.1));
+                                ui.add(egui::DragValue::new(&mut selected.scale.z).speed(0.1));
+                            });
+                            ui.end_row();
+
+                            show_color_for_primative(&mut ui, &mut operations, &mut selected);
+
+                            ui.label("Rounding");
+                            ui.add(egui::Slider::new(&mut selected.rounding, 0.0..=1.0));
+                            ui.end_row();
+
+                            let union_text = RichText::new("union").size(14.0);
+                            let begin_union_button = egui::Button::new(union_text);
+
+                            ui.label("Actions");
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add(begin_union_button)
+                                    .on_hover_text("begin union")
+                                    .clicked()
+                                {
+                                    *control_mode = controls::ControlMode::UnionSelect;
+                                }
+                            });
                         });
-                        ui.end_row();
-
-                        ui.label("Scale");
-                        ui.horizontal(|ui| {
-                            ui.add(egui::DragValue::new(&mut selected.scale.x).speed(0.1));
-                            ui.add(egui::DragValue::new(&mut selected.scale.y).speed(0.1));
-                            ui.add(egui::DragValue::new(&mut selected.scale.z).speed(0.1));
-                        });
-                        ui.end_row();
-
-                        ui.label("Picker");
-                        ui.horizontal(|ui| {
-                            ui.color_edit_button_rgb(&mut selected.color);
-                        });
-                        ui.end_row();
-
-                        ui.label("Rounding");
-                        ui.add(egui::Slider::new(&mut selected.rounding, 0.0..=1.0));
-                        ui.end_row();
-
-                        let union_text = RichText::new("union").size(14.0);
-                        let begin_union_button = egui::Button::new(union_text);
-
-                        ui.label("Actions");
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add(begin_union_button)
-                                .on_hover_text("begin union")
-                                .clicked()
-                            {
-                                *control_mode = controls::ControlMode::UnionSelect;
-                            }
-                        });
-                    });
                 });
 
             ui.end_row();
@@ -175,6 +173,28 @@ fn place_geometry_tooltop(
         });
 
     Ok(())
+}
+
+// When involved in a CSG operation a primative's color is overwritten by the
+// operation. We should show the primative of the 'highest order' CSG operation
+// the primative is involved in
+fn show_color_for_primative(
+    ui: &mut egui::Ui,
+    operations: &mut OperationsForest,
+    target: &mut geometry::BoxGeometry,
+) {
+    let operation = operations.find_root_mut(&target.id).expect("exists");
+
+    ui.label("Picker");
+    ui.horizontal(|ui| match operation {
+        operations::Node::Geometry(_) => {
+            ui.color_edit_button_rgb(&mut target.color);
+        }
+        operations::Node::Union(union) => {
+            ui.color_edit_button_rgb(&mut union.color);
+        }
+    });
+    ui.end_row();
 }
 
 fn show_unions_for_selected(

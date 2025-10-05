@@ -19,6 +19,7 @@ pub struct Union {
     pub left: Box<Node>,
     pub right: Box<Node>,
     pub blend: f32,
+    pub color: [f32; 3],
 }
 
 pub struct OperationsPlugin;
@@ -53,11 +54,13 @@ fn perform_union(
         return;
     }
 
+    let first = selected.iter().next().expect("exists").0;
+    let second = selected.iter().nth(1).expect("exists").0;
     let left = operations
-        .find_root_index(&selected.iter().next().expect("exists").0.id)
+        .find_root_index(&first.id)
         .expect("Node does not exists in tree");
     let right = operations
-        .find_root_index(&selected.iter().nth(1).expect("exists").0.id)
+        .find_root_index(&second.id)
         .expect("Node does not exist in tree");
 
     // The Nodes already belong to the same root (union operation doesn't make
@@ -69,12 +72,20 @@ fn perform_union(
     }
 
     let left = operations.take_root(left);
+
+    // TODO: avoid duplicate operation
+    let right = operations
+        .find_root_index(&selected.iter().nth(1).expect("exists").0.id)
+        .expect("Node does not exist in tree");
+
     let right = operations.take_root(right);
 
     let node = Node::Union(Union {
         id: node_id::NodeId::new(new_id.next()),
         left: Box::new(left),
         right: Box::new(right),
+        // Unions take the color of the first operation used to create them
+        color: first.color,
         blend: 0.0,
     });
 
@@ -85,6 +96,9 @@ fn perform_union(
 }
 
 impl OperationsForest {
+    pub fn find_root_mut(&mut self, target: &node_id::NodeId) -> Option<&mut Node> {
+        self.roots.iter_mut().find(|node| node.contains(target))
+    }
     fn take_root(&mut self, idx: usize) -> Node {
         self.roots.remove(idx)
     }
