@@ -1,7 +1,7 @@
 #import bevy_pbr::forward_io::VertexOutput
 
-const MAX_STEPS: i32 = 200;
-const HIT_THRESHOLD: f32 = 0.001;
+const MAX_STEPS: i32 = 100;
+const HIT_THRESHOLD: f32 = 0.01;
 const MAX_DISTANCE: f32 = 500.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
@@ -115,39 +115,37 @@ struct SdfResult {
 
 fn map(p: vec3<f32>) -> SdfResult {
     if (is_color_picking != 0) {
-        return map2(p);
+        return map_unlit(p);
     } else {
-        return map3(p);
+        return map_lit(p);
     }
 }
 
-fn map2(p: vec3<f32>) -> SdfResult {
+fn map_unlit(p: vec3<f32>) -> SdfResult {
     var sdf = SdfResult(100.0, BLACK);
 
     for (var i = 0u; i < arrayLength(&primatives); i++) {
         let box = primatives[i];
 
-        let color = color_from_box(box);
+        let color = box.logical_color;
         let b = sd_box(p - box.position, box.scale, box.rounding, color);
 
         sdf = min_sdf(sdf, b);
     }
 
-    if(is_color_picking == 0) {
-        sdf =  min_sdf(sd_ground(p), sdf);
-    }
+    sdf =  min_sdf(sd_ground(p), sdf);
 
     return sdf;
 }
 
-fn map3(p: vec3<f32>) -> SdfResult {
+fn map_lit(p: vec3<f32>) -> SdfResult {
 
     for (var i: u32 = 0u; i < arrayLength(&operations); i = i + 1u) {
         let node = operations[i];
 
         if (node.kind == 0u) {
             let prim = primatives[node.primative_index];
-            let color = color_from_box(prim);
+            let color = prim.color;
             results[i] = sd_box(p - prim.position, prim.scale, prim.rounding, color);
 
         } else if (node.kind == 1u) { // union
@@ -165,19 +163,9 @@ fn map3(p: vec3<f32>) -> SdfResult {
         sdf = min_sdf(sdf, operation_sdf);
     }
 
-    if(is_color_picking == 0) {
-        sdf =  min_sdf(sd_ground(p), sdf);
-    }
+    sdf =  min_sdf(sd_ground(p), sdf);
 
     return sdf;
-}
-
-fn color_from_box(box: GpuPrimative) -> vec3<f32> {
-    if(is_color_picking != 0) {
-        return box.logical_color;
-    } else {
-        return box.color;
-    }
 }
 
 fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
