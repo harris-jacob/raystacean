@@ -50,12 +50,14 @@ fn perform_union(
         return;
     }
 
-    if selected.iter().len() != 2 {
+    let mut selected = selected.iter();
+
+    if selected.len() != 2 {
         return;
     }
 
-    let first = selected.iter().next().expect("exists").0;
-    let second = selected.iter().nth(1).expect("exists").0;
+    let first = selected.next().expect("exists").0;
+    let second = selected.next().expect("exists").0;
 
     // The Nodes already belong to the same root (union operation doesn't make
     // sense)
