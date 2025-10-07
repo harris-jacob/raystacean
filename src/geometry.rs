@@ -1,13 +1,11 @@
 use bevy::{prelude::*, render::camera::CameraProjection};
 
-use crate::{camera, controls, events, transform_ext::CameraViewMatrix};
+use crate::{camera, controls, events, global_id, node_id, transform_ext::CameraViewMatrix};
 
 pub struct GeometryPlugin;
 
 impl Plugin for GeometryPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(GlobalId::default());
-
         app.add_observer(place_box);
     }
 }
@@ -18,24 +16,12 @@ pub struct BoxGeometry {
     pub scale: Vec3,
     pub color: [f32; 3],
     pub rounding: f32,
-    pub id: GeometryId,
-}
-
-#[derive(Resource, Default)]
-struct GlobalId(u32);
-
-impl GlobalId {
-    pub fn next(&mut self) -> u32 {
-        let id = self.0;
-        self.0 += 1;
-
-        id
-    }
+    pub id: node_id::NodeId,
 }
 
 impl BoxGeometry {
     fn new(position: Vec3, id: u32) -> Self {
-        let id = GeometryId::new(id);
+        let id = node_id::NodeId::new(id);
         BoxGeometry {
             position,
             scale: Vec3::ONE * 2.5,
@@ -64,7 +50,7 @@ fn place_box(
     mut control_mode: ResMut<controls::ControlMode>,
     windows: Query<&Window>,
     camera: Query<(&Projection, &Transform), With<camera::MainCamera>>,
-    mut global_id: ResMut<GlobalId>,
+    mut global_id: ResMut<global_id::GlobalId>,
     mut commands: Commands,
 ) {
     if *control_mode != controls::ControlMode::PlaceGeometry {
@@ -82,45 +68,18 @@ fn place_box(
         let geometry = BoxGeometry::new(hit, global_id.next());
         // sit the box on the  plane rather than putting the center on it
         let y = geometry.scale.y;
-        commands.spawn(geometry.with_y(y));
+
+        let geometry_id = geometry.id;
+
+        let entity_id = commands.spawn(geometry.with_y(y)).id();
+
+        commands.trigger(events::GeometryAdded {
+            id: geometry_id,
+            entity: entity_id,
+        });
 
         *control_mode = controls::ControlMode::Select;
     };
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GeometryId(u32);
-
-impl GeometryId {
-    pub fn new(id: u32) -> Self {
-        Self(id)
-    }
-
-    pub fn to_color(self) -> [f32; 3] {
-        let r = ((self.0 & 0xFF) as f32) / 255.0;
-        let g = (((self.0 >> 8) & 0xFF) as f32) / 255.0;
-        let b = (((self.0 >> 16) & 0xFF) as f32) / 255.0;
-
-        [r, g, b]
-    }
-
-    pub fn to_scrambled_color(self) -> [f32; 3] {
-        let id = scramble(self.0);
-
-        let r = ((id & 0xFF) as f32) / 255.0;
-        let g = (((id >> 8) & 0xFF) as f32) / 255.0;
-        let b = (((id >> 16) & 0xFF) as f32) / 255.0;
-
-        [r, g, b]
-    }
-
-    pub fn from_color(color: Vec3) -> Self {
-        let r = (color.x * 255.0) as u32;
-        let g = ((color.y * 255.0) as u32) << 8;
-        let b = ((color.z * 255.0) as u32) << 16;
-
-        Self(r | g | b)
-    }
 }
 
 // Given a 2d screen space position, fire a ray into the scene along the camera
@@ -162,14 +121,4 @@ fn cast_ray_at_ground_in_scene(
 
     // Substitute back into ray eqn
     Some(ray_origin_world + ray_dir_world * t)
-}
-
-const MODULUS: u32 = 1 << 24;
-const MULTIPLIER: u32 = 0x00C297D7;
-const XOR_MASK: u32 = 0x0055AA33;
-
-fn scramble(x: u32) -> u32 {
-    assert!(x < MODULUS);
-    let x = x ^ XOR_MASK;
-    x.wrapping_mul(MULTIPLIER) & 0xFFFFFF
 }

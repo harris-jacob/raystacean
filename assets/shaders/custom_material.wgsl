@@ -1,7 +1,7 @@
 #import bevy_pbr::forward_io::VertexOutput
 
-const MAX_STEPS: i32 = 200;
-const HIT_THRESHOLD: f32 = 0.001;
+const MAX_STEPS: i32 = 100;
+const HIT_THRESHOLD: f32 = 0.01;
 const MAX_DISTANCE: f32 = 500.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
@@ -9,13 +9,22 @@ const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
 const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
-struct GpuBox {
+struct GpuPrimative {
     position: vec3<f32>,
     scale: vec3<f32>, 
     color: vec3<f32>,
     rounding: f32,
     logical_color: vec3<f32>,
     selected: f32,
+}
+
+struct GpuOp {
+    kind: u32,
+    left: u32,
+    right: u32,
+    primative_index: u32,
+    color: vec3<f32>,
+    blend: f32,
 }
 
 @group(2) @binding(0)
@@ -29,9 +38,16 @@ var<uniform> cursor_position: vec2<f32>;
 @group(2) @binding(4)
 var<uniform> is_color_picking: u32;
 @group(2) @binding(5)
-var<storage, read> boxes: array<GpuBox>;
+var<storage, read> primatives: array<GpuPrimative>;
 @group(2) @binding(6)
+var<storage, read> operations: array<GpuOp>;
+@group(2) @binding(7)
+var<storage, read> op_roots: array<u32>;
+@group(2) @binding(8)
 var<storage, read_write> selection: array<f32>;
+
+
+var<private> results: array<SdfResult, 100>;
 
 fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
     let d = length(p) - r;
@@ -98,36 +114,76 @@ struct SdfResult {
 }
 
 fn map(p: vec3<f32>) -> SdfResult {
+    if (is_color_picking != 0) {
+        return map_unlit(p);
+    } else {
+        return map_lit(p);
+    }
+}
+
+fn map_unlit(p: vec3<f32>) -> SdfResult {
     var sdf = SdfResult(100.0, BLACK);
 
-    for (var i = 0u; i < arrayLength(&boxes); i++) {
-        let box = boxes[i];
+    for (var i = 0u; i < arrayLength(&primatives); i++) {
+        let box = primatives[i];
 
-        let color = color_from_box(box);
+        let color = box.logical_color;
         let b = sd_box(p - box.position, box.scale, box.rounding, color);
 
         sdf = min_sdf(sdf, b);
     }
 
-    if(is_color_picking == 0) {
-        sdf =  min_sdf(sd_ground(p), sdf);
-    }
+    sdf =  min_sdf(sd_ground(p), sdf);
 
     return sdf;
 }
 
-fn color_from_box(box: GpuBox) -> vec3<f32> {
-    if(is_color_picking != 0) {
-        return box.logical_color;
-    } else {
-        return box.color;
+fn map_lit(p: vec3<f32>) -> SdfResult {
+
+    for (var i: u32 = 0u; i < arrayLength(&operations); i = i + 1u) {
+        let node = operations[i];
+
+        if (node.kind == 0u) {
+            let prim = primatives[node.primative_index];
+            let color = prim.color;
+            results[i] = sd_box(p - prim.position, prim.scale, prim.rounding, color);
+
+        } else if (node.kind == 1u) { // union
+            results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, node.blend);
+            results[i].color = node.color;
+        }
     }
+
+    var sdf = SdfResult(100.0, BLACK);
+
+    for (var i = 0u;  i < arrayLength(&op_roots); i = i + 1u) {
+        let idx = op_roots[i];
+        let operation_sdf = results[idx];
+
+        sdf = min_sdf(sdf, operation_sdf);
+    }
+
+    sdf =  min_sdf(sd_ground(p), sdf);
+
+    return sdf;
 }
 
 fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
     let inverted = SdfResult(-s1.dist, s1.color);
 
     return max_sdf(inverted, s2);
+}
+
+// quadratic polynomial with fallback to min
+fn op_smooth_union(s1: f32, s2: f32, b: f32) -> f32 {
+    if(b == 0.0) {
+        return min(s1, s2);
+    }
+
+    let k = b * 4.0;
+    let h = max(k - abs(s1 - s2), 0.0);
+
+    return min(s1, s2) - h*h*0.25/k;
 }
 
 fn min_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
