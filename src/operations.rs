@@ -56,29 +56,21 @@ fn perform_union(
 
     let first = selected.iter().next().expect("exists").0;
     let second = selected.iter().nth(1).expect("exists").0;
-    let left = operations
-        .find_root_index(&first.id)
-        .expect("Node does not exists in tree");
-    let right = operations
-        .find_root_index(&second.id)
-        .expect("Node does not exist in tree");
 
     // The Nodes already belong to the same root (union operation doesn't make
     // sense)
-    if left == right {
+    if first.id == second.id {
         commands.trigger(events::UnionOperationErrored);
         *control_mode = controls::ControlMode::Select;
         return;
     }
 
-    let left = operations.take_root(left);
-
-    // TODO: avoid duplicate operation
+    let left = operations
+        .find_and_take_root(&first.id)
+        .expect("Node does not exists in tree");
     let right = operations
-        .find_root_index(&selected.iter().nth(1).expect("exists").0.id)
+        .find_and_take_root(&second.id)
         .expect("Node does not exist in tree");
-
-    let right = operations.take_root(right);
 
     let node = Node::Union(Union {
         id: node_id::NodeId::new(new_id.next()),
@@ -99,12 +91,15 @@ impl OperationsForest {
     pub fn find_root_mut(&mut self, target: &node_id::NodeId) -> Option<&mut Node> {
         self.roots.iter_mut().find(|node| node.contains(target))
     }
-    fn take_root(&mut self, idx: usize) -> Node {
-        self.roots.remove(idx)
+
+    /// Find the root of a node and take it out of the tree
+    fn find_and_take_root(&mut self, target: &node_id::NodeId) -> Option<Node> {
+        let pos = self.roots.iter().position(|node| node.contains(target))?;
+        Some(self.take_root(pos))
     }
 
-    fn find_root_index(&self, target: &node_id::NodeId) -> Option<usize> {
-        self.roots.iter().position(|node| node.contains(target))
+    fn take_root(&mut self, idx: usize) -> Node {
+        self.roots.remove(idx)
     }
 
     fn insert_root(&mut self, node: Node) {
