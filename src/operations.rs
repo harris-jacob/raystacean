@@ -56,30 +56,44 @@ fn perform_union(
         return;
     }
 
-    let first = selected.next().expect("exists").0;
-    let second = selected.next().expect("exists").0;
+    let first_primative = selected.next().expect("exists").0;
+    let second_primative = selected.next().expect("exists").0;
+
+    let first = operations.find_root(&first_primative.id).expect("exists");
+    let second = operations.find_root(&second_primative.id).expect("exists");
 
     // The Nodes already belong to the same root (union operation doesn't make
     // sense)
-    if first.id == second.id {
+    if first == second {
         commands.trigger(events::UnionOperationErrored);
         *control_mode = controls::ControlMode::Select;
         return;
     }
 
+    let first_id = first.id();
+    let second_id = second.id();
+
     let left = operations
-        .find_and_take_root(&first.id)
+        .take_root(&first_id)
         .expect("Node does not exists in tree");
+
     let right = operations
-        .find_and_take_root(&second.id)
+        .take_root(&second_id)
         .expect("Node does not exist in tree");
+
+    // Unions take the color of the first operation used to create them
+    // That's either the color of the first primative selected, or the
+    // color of the existing 'root' union
+    let color = match &left {
+        Node::Geometry(_) => first_primative.color,
+        Node::Union(union) => union.color,
+    };
 
     let node = Node::Union(Union {
         id: node_id::NodeId::new(new_id.next()),
         left: Box::new(left),
         right: Box::new(right),
-        // Unions take the color of the first operation used to create them
-        color: first.color,
+        color,
         blend: 0.0,
     });
 
@@ -95,13 +109,14 @@ impl OperationsForest {
     }
 
     /// Find the root of a node and take it out of the tree
-    fn find_and_take_root(&mut self, target: &node_id::NodeId) -> Option<Node> {
-        let pos = self.roots.iter().position(|node| node.contains(target))?;
-        Some(self.take_root(pos))
+    fn find_root(&self, target: &node_id::NodeId) -> Option<&Node> {
+        self.roots.iter().find(|node| node.contains(target))
     }
 
-    fn take_root(&mut self, idx: usize) -> Node {
-        self.roots.remove(idx)
+    fn take_root(&mut self, target: &node_id::NodeId) -> Option<Node> {
+        let idx = self.roots.iter().position(|node| node.id() == *target)?;
+
+        Some(self.roots.remove(idx))
     }
 
     fn insert_root(&mut self, node: Node) {
@@ -119,6 +134,13 @@ impl Node {
 
                 left | right
             }
+        }
+    }
+
+    fn id(&self) -> node_id::NodeId {
+        match self {
+            Node::Geometry(node_id) => *node_id,
+            Node::Union(union) => union.id,
         }
     }
 }
