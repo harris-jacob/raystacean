@@ -21,6 +21,12 @@ pub struct UnionOperationPerformed;
 pub struct UnionOperationErrored;
 
 #[derive(Event, Debug)]
+pub struct SubtractOperationPerformed;
+
+#[derive(Event, Debug)]
+pub struct SubtractOperationErrored;
+
+#[derive(Event, Debug)]
 pub struct OriginDragged {
     pub axis: Vec3,
     pub delta: Vec2,

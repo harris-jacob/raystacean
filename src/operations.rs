@@ -11,6 +11,15 @@ pub struct OperationsForest {
 pub enum Node {
     Geometry(node_id::NodeId),
     Union(Union),
+    Subtract(Subtract),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Subtract {
+    pub id: node_id::NodeId,
+    pub left: Box<Node>,
+    pub right: Box<Node>,
+    pub blend: f32,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -27,7 +36,7 @@ pub struct OperationsPlugin;
 impl Plugin for OperationsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(OperationsForest::default())
-            .add_systems(Update, perform_union)
+            .add_systems(Update, (perform_union, perform_subtract))
             .add_observer(on_geometry_added);
     }
 }
@@ -87,6 +96,8 @@ fn perform_union(
     let color = match &left {
         Node::Geometry(_) => first_primative.color,
         Node::Union(union) => union.color,
+        // TODO: properly resolve
+        Node::Subtract(_) => first_primative.color,
     };
 
     let node = Node::Union(Union {
@@ -99,6 +110,64 @@ fn perform_union(
 
     operations.insert_root(node);
     commands.trigger(events::UnionOperationPerformed);
+
+    *control_mode = controls::ControlMode::Select;
+}
+
+// TODO: extract shared logic with above
+fn perform_subtract(
+    mut control_mode: ResMut<controls::ControlMode>,
+    selected: Query<(&geometry::BoxGeometry, Entity), With<selection::Selected>>,
+    mut operations: ResMut<OperationsForest>,
+    mut new_id: ResMut<global_id::GlobalId>,
+    mut commands: Commands,
+) {
+    if *control_mode != controls::ControlMode::SubtractSelect {
+        return;
+    }
+
+    let mut selected = selected.iter();
+
+    if selected.len() != 2 {
+        return;
+    }
+
+    let first_primative = selected.next().expect("exists").0;
+    let second_primative = selected.next().expect("exists").0;
+
+    let first = operations.find_root(&first_primative.id).expect("exists");
+    let second = operations.find_root(&second_primative.id).expect("exists");
+
+    // The Nodes already belong to the same root (union operation doesn't make
+    // sense)
+    if first == second {
+        commands.trigger(events::SubtractOperationErrored);
+        *control_mode = controls::ControlMode::Select;
+        return;
+    }
+
+    let first_id = first.id();
+    let second_id = second.id();
+
+    let left = operations
+        .take_root(&first_id)
+        .expect("Node does not exists in tree");
+
+    let right = operations
+        .take_root(&second_id)
+        .expect("Node does not exist in tree");
+
+    let node = Node::Subtract(Subtract {
+        id: node_id::NodeId::new(new_id.next()),
+        left: Box::new(left),
+        right: Box::new(right),
+        blend: 0.0,
+    });
+
+    operations.insert_root(node);
+    commands.trigger(events::SubtractOperationPerformed);
+
+    dbg!(operations);
 
     *control_mode = controls::ControlMode::Select;
 }
@@ -134,6 +203,12 @@ impl Node {
 
                 left | right
             }
+            Node::Subtract(subtract) => {
+                let left = subtract.left.contains(id);
+                let right = subtract.right.contains(id);
+
+                left | right
+            }
         }
     }
 
@@ -141,6 +216,7 @@ impl Node {
         match self {
             Node::Geometry(node_id) => *node_id,
             Node::Union(union) => union.id,
+            Node::Subtract(subract) => subract.id,
         }
     }
 }

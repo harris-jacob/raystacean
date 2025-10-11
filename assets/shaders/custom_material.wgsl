@@ -151,6 +151,9 @@ fn map_lit(p: vec3<f32>) -> SdfResult {
         } else if (node.kind == 1u) { // union
             results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, node.blend);
             results[i].color = node.color;
+        } else if (node.kind == 2u) { // union
+            results[i].dist = op_smooth_subtract(results[node.left].dist, results[node.right].dist, node.blend);
+            results[i].color = results[node.left].color;
         }
     }
 
@@ -172,6 +175,12 @@ fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
     let inverted = SdfResult(-s1.dist, s1.color);
 
     return max_sdf(inverted, s2);
+}
+
+// quadratic polynomial with fallback to min
+fn op_smooth_subtract(s1: f32, s2: f32, b: f32) -> f32 {
+
+    return -op_smooth_union(s1, -s2, b);
 }
 
 // quadratic polynomial with fallback to min
