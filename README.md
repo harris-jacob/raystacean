@@ -20,7 +20,7 @@ Basically my Todo list.
 - [x] Support for color selection (seperate logical ID colors from display colors).
 - [x] Improved UI using egui.
 - [x] Rounding/smoothing box geometry.
-- [ ] CSG support (union, subtract, intersection) with smooth blending.
+- [x] CSG support (union, subtract, intersection) with smooth blending.
 - [ ] Add more primatives (sphere, cylinder torus).
 - [ ] Improved environmental lighting.
 - [ ] Antialiasing grid plane.
