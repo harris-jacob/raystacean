@@ -148,11 +148,11 @@ fn map_lit(p: vec3<f32>) -> SdfResult {
             let color = prim.color;
             results[i] = sd_box(p - prim.position, prim.scale, prim.rounding, color);
 
-        } else if (node.kind == 1u) { // union
+        } else if (node.kind == 1u) {
             results[i].dist = op_smooth_union(results[node.left].dist, results[node.right].dist, node.blend);
             results[i].color = node.color;
-        } else if (node.kind == 2u) { // union
-            results[i].dist = op_smooth_subtract(results[node.left].dist, results[node.right].dist, node.blend);
+        } else if (node.kind == 2u) {
+            results[i].dist = op_smooth_subtract(results[node.right].dist, results[node.left].dist, node.blend);
             results[i].color = results[node.left].color;
         }
     }
