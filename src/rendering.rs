@@ -10,7 +10,6 @@ use bevy::render::view::RenderLayers;
 use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
-use crate::operations::CsgOperation;
 use crate::{events, node_id, operations, selection};
 use crate::{geometry, layers};
 

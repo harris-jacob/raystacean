@@ -205,7 +205,6 @@ fn show_color_for_primative(
                 ui.color_edit_button_rgb(&mut target.color);
             }
             operations::Node::Subtract(operation) | operations::Node::Union(operation) => {
-                ui.label("Picker");
                 ui.color_edit_button_rgb(&mut operation.color);
             }
         }

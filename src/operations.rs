@@ -41,7 +41,7 @@ fn on_geometry_added(
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum CsgOperation {
+enum CsgOperation {
     Union,
     Subtract,
 }
@@ -207,15 +207,9 @@ impl Node {
     fn contains(&self, id: &node_id::NodeId) -> bool {
         match self {
             Node::Geometry(node_id) => node_id == id,
-            Node::Union(union) => {
-                let left = union.left.contains(id);
-                let right = union.right.contains(id);
-
-                left | right
-            }
-            Node::Subtract(subtract) => {
-                let left = subtract.left.contains(id);
-                let right = subtract.right.contains(id);
+            Node::Subtract(operation) | Node::Union(operation) => {
+                let left = operation.left.contains(id);
+                let right = operation.right.contains(id);
 
                 left | right
             }
@@ -225,8 +219,7 @@ impl Node {
     fn id(&self) -> node_id::NodeId {
         match self {
             Node::Geometry(node_id) => *node_id,
-            Node::Union(union) => union.id,
-            Node::Subtract(subract) => subract.id,
+            Node::Union(operation) | Node::Subtract(operation) => operation.id,
         }
     }
 }
