@@ -17,7 +17,8 @@ pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<SceneMaterial>::default())
+        app.add_plugins(MaterialPlugin::<LitMaterial>::default())
+            .add_plugins(MaterialPlugin::<SelectionMaterial>::default())
             .add_systems(Startup, setup)
             .add_systems(
                 Update,
@@ -38,7 +39,8 @@ fn setup(
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
-    mut materials: ResMut<Assets<SceneMaterial>>,
+    mut lit_material: ResMut<Assets<LitMaterial>>,
+    mut selection_material: ResMut<Assets<SelectionMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     window: Single<&Window>,
 ) {
@@ -71,26 +73,18 @@ fn setup(
 
     let selection = buffers.add(selection_buffer);
 
-    let lit_material_handle = materials.add(SceneMaterial {
-        aspect_ratio: Vec2::new(window.width(), window.height()),
+    let lit_material_handle = lit_material.add(LitMaterial {
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        is_color_picking: LIT_PASS,
         primatives: primatives.clone(),
         operations: operations.clone(),
         op_roots: op_roots.clone(),
-        selection: selection.clone(),
-        cursor_position: Vec2::default(),
     });
 
-    let color_pick_material_handle = materials.add(SceneMaterial {
-        aspect_ratio: Vec2::new(window.width(), window.height()),
+    let selection_material_handle = selection_material.add(SelectionMaterial {
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        is_color_picking: COLOR_PICKING_PASS,
         primatives: primatives.clone(),
-        operations: operations.clone(),
-        op_roots: op_roots.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
     });
@@ -144,7 +138,7 @@ fn setup(
         .spawn((
             RenderingPlane,
             Mesh3d(mesh),
-            MeshMaterial3d(color_pick_material_handle),
+            MeshMaterial3d(selection_material_handle),
             RenderLayers::layer(layers::SELECTION_LAYER),
         ))
         .observe(output_click_event);
@@ -168,17 +162,12 @@ fn setup(
 
 fn window_resize_system(
     mut resize_events: EventReader<WindowResized>,
-    mut materials: ResMut<Assets<SceneMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut query: Query<&mut Mesh3d, With<RenderingPlane>>,
 ) {
     for e in resize_events.read() {
         let width = e.width;
         let height = e.height;
-
-        for (_, mat) in materials.iter_mut() {
-            mat.aspect_ratio = Vec2::new(width, height);
-        }
 
         for mesh in &mut query {
             if let Some(mesh) = meshes.get_mut(&mesh.0) {
@@ -238,7 +227,7 @@ fn bool_to_gpu(value: bool) -> u32 {
     if value { 1 } else { 0 }
 }
 
-fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SceneMaterial>>) {
+fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SelectionMaterial>>) {
     let window = windows.single().expect("single");
 
     let Some(cursor_pos) = window.cursor_position() else {
@@ -278,30 +267,38 @@ struct GpuOp {
     blend: f32,
 }
 
+/// Material linked to shader that displays only primative shapes, rendering
+/// each shape according to a color representation of its ID, used for color
+/// picking selection.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub struct SceneMaterial {
+pub struct SelectionMaterial {
     #[uniform(0)]
-    aspect_ratio: Vec2,
-    #[uniform(1)]
     pub view_to_world: Mat4,
-    #[uniform(2)]
+    #[uniform(1)]
     pub clip_to_view: Mat4,
-    #[uniform(3)]
+    #[uniform(2)]
     pub cursor_position: Vec2,
-    #[uniform(4)]
-    pub is_color_picking: u32,
-    #[storage(5, read_only)]
+    #[storage(3, read_only)]
     pub primatives: Handle<ShaderStorageBuffer>,
-    #[storage(6, read_only)]
-    pub operations: Handle<ShaderStorageBuffer>,
-    #[storage(7, read_only)]
-    pub op_roots: Handle<ShaderStorageBuffer>,
-    #[storage(8)]
+    #[storage(4)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 
-const LIT_PASS: u32 = 0;
-const COLOR_PICKING_PASS: u32 = 1;
+/// Material linked to shader that displays the scene with full lighting and
+/// takes into account CSG operations.
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+pub struct LitMaterial {
+    #[uniform(0)]
+    pub view_to_world: Mat4,
+    #[uniform(1)]
+    pub clip_to_view: Mat4,
+    #[storage(2, read_only)]
+    pub primatives: Handle<ShaderStorageBuffer>,
+    #[storage(3, read_only)]
+    pub operations: Handle<ShaderStorageBuffer>,
+    #[storage(4, read_only)]
+    pub op_roots: Handle<ShaderStorageBuffer>,
+}
 
 #[derive(Resource)]
 pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
@@ -345,9 +342,15 @@ impl OpRootsBufferHandle {
     }
 }
 
-impl Material for SceneMaterial {
+impl Material for SelectionMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/custom_material.wgsl".into()
+        "shaders/selection_shader.wgsl".into()
+    }
+}
+
+impl Material for LitMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/lit_shader.wgsl".into()
     }
 }
 

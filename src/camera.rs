@@ -144,11 +144,16 @@ fn update_main_camera(
 
 fn update_material_transform(
     query: Query<(&Transform, &Projection), With<MainCamera>>,
-    mut materials: ResMut<Assets<rendering::SceneMaterial>>,
+    mut lit_material: ResMut<Assets<rendering::LitMaterial>>,
+    mut selection_material: ResMut<Assets<rendering::SelectionMaterial>>,
 ) {
     let (camera_transform, projection) = query.single().expect("should be one main camera");
 
-    for (_, material) in materials.iter_mut() {
+    for (_, material) in lit_material.iter_mut() {
+        material.view_to_world = camera_transform.view_matrix().inverse();
+        material.clip_to_view = projection.get_clip_from_view().inverse();
+    }
+    for (_, material) in selection_material.iter_mut() {
         material.view_to_world = camera_transform.view_matrix().inverse();
         material.clip_to_view = projection.get_clip_from_view().inverse();
     }

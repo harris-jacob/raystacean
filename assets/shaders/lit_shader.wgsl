@@ -1,12 +1,11 @@
 #import bevy_pbr::forward_io::VertexOutput
 
+#import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, sd_ground, min_sdf, max_sdf, SdfResult}
+
 const MAX_STEPS: i32 = 100;
 const HIT_THRESHOLD: f32 = 0.01;
 const MAX_DISTANCE: f32 = 500.0;
 
-const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
-const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
-const WHITE: vec3<f32> = vec3(1.0, 1.0, 1.0);
 const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
 struct GpuPrimative {
@@ -28,78 +27,18 @@ struct GpuOp {
 }
 
 @group(2) @binding(0)
-var<uniform> aspect_ratio: vec2<f32>;
-@group(2) @binding(1)
 var<uniform> view_to_world: mat4x4<f32>;
-@group(2) @binding(2)
+@group(2) @binding(1)
 var<uniform> clip_to_view: mat4x4<f32>;
-@group(2) @binding(3)
-var<uniform> cursor_position: vec2<f32>;
-@group(2) @binding(4)
-var<uniform> is_color_picking: u32;
-@group(2) @binding(5)
+@group(2) @binding(2)
 var<storage, read> primatives: array<GpuPrimative>;
-@group(2) @binding(6)
+@group(2) @binding(3)
 var<storage, read> operations: array<GpuOp>;
-@group(2) @binding(7)
+@group(2) @binding(4)
 var<storage, read> op_roots: array<u32>;
-@group(2) @binding(8)
-var<storage, read_write> selection: array<f32>;
 
 
 var<private> results: array<SdfResult, 100>;
-
-fn sd_sphere(p: vec3<f32>, r: f32) -> SdfResult {
-    let d = length(p) - r;
-    return SdfResult(d, BLUE);
-}
-
-fn sd_box(p: vec3<f32>, b: vec3<f32>, r: f32, color: vec3<f32>) -> SdfResult {
-  let q = abs(p) - b + r;
-  let d = length(max(q, vec3(0.0))) + min(max(q.x,max(q.y,q.z)), 0.0) - r;
-  return SdfResult(d, color);
-}
-
-fn sd_box_frame(in: vec3<f32>, b: vec3<f32>, e: f32, color: vec3<f32>) -> SdfResult {
-    let p = abs(in)-b;
-    let q = abs(p+e)-e;
-  
-  return SdfResult(min(min(
-      length(max(vec3(p.x,q.y,q.z), vec3(0.0)))+min(max(p.x,max(q.y,q.z)), 0.0),
-      length(max(vec3(q.x,p.y,q.z), vec3(0.0)))+min(max(q.x, max(p.y,q.z)), 0.0)),
-      length(max(vec3(q.x,q.y,p.z), vec3(0.0)))+min(max(q.x,max(q.y,p.z)), 0.0)
-      ), color);
-}
-
-fn sd_ground(p: vec3<f32>) -> SdfResult {
-  return SdfResult(p.y, grid_color(p));
-}
-
-fn grid_color(pos: vec3<f32>) -> vec3<f32> {
-    let minor_scale = 2.5;
-    let major_scale = 0.5;
-    let line_thickness = 0.01;
-    
-    let p_minor = pos.xz * minor_scale;
-    let gx = abs(fract(p_minor.x) - 0.5);
-    let gz = abs(fract(p_minor.y) - 0.5);
-    let line_minor = f32(gx < line_thickness || gz < line_thickness);
-
-    let p_major = pos.xz * major_scale;
-    let mx = abs(fract(p_major.x) - 0.5);
-    let mz = abs(fract(p_major.y) - 0.5);
-    let line_major = f32(mx < line_thickness || mz < line_thickness);
-
-    let base_col   = vec3<f32>(0.95, 0.97, 1.0);
-    let minor_col  = vec3<f32>(0.4, 0.6, 0.9);
-    let major_col  = vec3<f32>(0.1, 0.3, 0.6);
-
-    var col = base_col;
-    if (line_minor > 0.5) { col = minor_col; }
-    if (line_major > 0.5) { col = major_col; }
-
-    return col;
-}
 
 fn sky_color(rd: vec3<f32>) -> vec3<f32> {
     let t = clamp(0.5 + 0.5 * rd.y, 0.0, 1.0);
@@ -108,37 +47,7 @@ fn sky_color(rd: vec3<f32>) -> vec3<f32> {
     return mix(horizon, zenith, t);
 }
 
-struct SdfResult {
-    dist: f32,
-    color: vec3<f32>,
-}
-
 fn map(p: vec3<f32>) -> SdfResult {
-    if (is_color_picking != 0) {
-        return map_unlit(p);
-    } else {
-        return map_lit(p);
-    }
-}
-
-fn map_unlit(p: vec3<f32>) -> SdfResult {
-    var sdf = SdfResult(100.0, BLACK);
-
-    for (var i = 0u; i < arrayLength(&primatives); i++) {
-        let box = primatives[i];
-
-        let color = box.logical_color;
-        let b = sd_box(p - box.position, box.scale, box.rounding, color);
-
-        sdf = min_sdf(sdf, b);
-    }
-
-    sdf =  min_sdf(sd_ground(p), sdf);
-
-    return sdf;
-}
-
-fn map_lit(p: vec3<f32>) -> SdfResult {
 
     for (var i: u32 = 0u; i < arrayLength(&operations); i = i + 1u) {
         let node = operations[i];
@@ -171,12 +80,6 @@ fn map_lit(p: vec3<f32>) -> SdfResult {
     return sdf;
 }
 
-fn op_subtraction(s1: SdfResult, s2: SdfResult) -> SdfResult {
-    let inverted = SdfResult(-s1.dist, s1.color);
-
-    return max_sdf(inverted, s2);
-}
-
 // quadratic polynomial with fallback to min
 fn op_smooth_subtract(s1: f32, s2: f32, b: f32) -> f32 {
 
@@ -193,23 +96,6 @@ fn op_smooth_union(s1: f32, s2: f32, b: f32) -> f32 {
     let h = max(k - abs(s1 - s2), 0.0);
 
     return min(s1, s2) - h*h*0.25/k;
-}
-
-fn min_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
-    if (s1.dist < s2.dist) {
-        return s1;
-    };
-
-    return s2;
-}
-
-
-fn max_sdf(s1: SdfResult, s2: SdfResult) -> SdfResult {
-    if (s1.dist > s2.dist) {
-        return s1;
-    };
-
-    return s2;
 }
 
 // Lighting method based on Inigo Quilez' raymarching - primatives demo
@@ -267,23 +153,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // 5. March in world space
     let result = ray_march(ray_origin_world, ray_dir_world);
 
-    if is_color_picking != 0 && distance(ndc.xy, cursor_position) < 0.001 {
-        selection[0] = result.x;
-        selection[1] = result.y;
-        selection[2] = result.z;
-    }
-
-
     return vec4<f32>(result, 1.0);
 
 }
 
 fn calc_lighting(pos: vec3<f32>, in: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
-    // Don't bother with lighting for color picking pass
-    if (is_color_picking != 0) {
-        return in;
-    }
-
     let sun_dir = normalize(vec3<f32>(-0.5, 0.4, -0.6));
     let half_dir = normalize(sun_dir - camera_dir);
 
