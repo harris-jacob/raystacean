@@ -10,11 +10,12 @@ pub struct OperationsForest {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Node {
     Geometry(node_id::NodeId),
-    Union(Union),
+    Union(Operation),
+    Subtract(Operation),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Union {
+pub struct Operation {
     pub id: node_id::NodeId,
     pub left: Box<Node>,
     pub right: Box<Node>,
@@ -27,7 +28,7 @@ pub struct OperationsPlugin;
 impl Plugin for OperationsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(OperationsForest::default())
-            .add_systems(Update, perform_union)
+            .add_systems(Update, (perform_union, perform_subtract))
             .add_observer(on_geometry_added);
     }
 }
@@ -39,14 +40,55 @@ fn on_geometry_added(
     operations.roots.push(Node::Geometry(trigger.id));
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum CsgOperation {
+    Union,
+    Subtract,
+}
+
+fn perform_subtract(
+    control_mode: ResMut<controls::ControlMode>,
+    selected: Query<(&geometry::BoxGeometry, Entity), With<selection::Selected>>,
+    operations: ResMut<OperationsForest>,
+    new_id: ResMut<global_id::GlobalId>,
+    commands: Commands,
+) {
+    perform_csg_operation(
+        control_mode,
+        selected,
+        operations,
+        new_id,
+        commands,
+        CsgOperation::Subtract,
+    )
+}
+
 fn perform_union(
+    control_mode: ResMut<controls::ControlMode>,
+    selected: Query<(&geometry::BoxGeometry, Entity), With<selection::Selected>>,
+    operations: ResMut<OperationsForest>,
+    new_id: ResMut<global_id::GlobalId>,
+    commands: Commands,
+) {
+    perform_csg_operation(
+        control_mode,
+        selected,
+        operations,
+        new_id,
+        commands,
+        CsgOperation::Union,
+    )
+}
+
+fn perform_csg_operation(
     mut control_mode: ResMut<controls::ControlMode>,
     selected: Query<(&geometry::BoxGeometry, Entity), With<selection::Selected>>,
     mut operations: ResMut<OperationsForest>,
     mut new_id: ResMut<global_id::GlobalId>,
     mut commands: Commands,
+    operation_type: CsgOperation,
 ) {
-    if *control_mode != controls::ControlMode::UnionSelect {
+    if !is_in_expected_control_mode(operation_type, &control_mode) {
         return;
     }
 
@@ -62,10 +104,10 @@ fn perform_union(
     let first = operations.find_root(&first_primative.id).expect("exists");
     let second = operations.find_root(&second_primative.id).expect("exists");
 
-    // The Nodes already belong to the same root (union operation doesn't make
+    // The Nodes already belong to the same root (operation doesn't make
     // sense)
     if first == second {
-        commands.trigger(events::UnionOperationErrored);
+        trigger_operation_error_event(operation_type, &mut commands);
         *control_mode = controls::ControlMode::Select;
         return;
     }
@@ -81,26 +123,63 @@ fn perform_union(
         .take_root(&second_id)
         .expect("Node does not exist in tree");
 
-    // Unions take the color of the first operation used to create them
-    // That's either the color of the first primative selected, or the
-    // color of the existing 'root' union
     let color = match &left {
         Node::Geometry(_) => first_primative.color,
-        Node::Union(union) => union.color,
+        Node::Union(operation) => operation.color,
+        Node::Subtract(operation) => operation.color,
     };
 
-    let node = Node::Union(Union {
+    let operation = Operation {
         id: node_id::NodeId::new(new_id.next()),
         left: Box::new(left),
         right: Box::new(right),
         color,
         blend: 0.0,
-    });
+    };
 
-    operations.insert_root(node);
-    commands.trigger(events::UnionOperationPerformed);
+    insert_operation(operation_type, operation, operations);
+    trigger_operation_performed_event(operation_type, &mut commands);
 
     *control_mode = controls::ControlMode::Select;
+}
+
+fn is_in_expected_control_mode(
+    operation_type: CsgOperation,
+    control_mode: &controls::ControlMode,
+) -> bool {
+    let expected_mode = match operation_type {
+        CsgOperation::Union => controls::ControlMode::UnionSelect,
+        CsgOperation::Subtract => controls::ControlMode::SubtractSelect,
+    };
+
+    *control_mode == expected_mode
+}
+
+fn insert_operation(
+    operation_type: CsgOperation,
+    operation: Operation,
+    mut operations: ResMut<OperationsForest>,
+) {
+    let node = match operation_type {
+        CsgOperation::Union => Node::Union(operation),
+        CsgOperation::Subtract => Node::Subtract(operation),
+    };
+
+    operations.insert_root(node);
+}
+
+fn trigger_operation_performed_event(operation_type: CsgOperation, commands: &mut Commands) {
+    match operation_type {
+        CsgOperation::Union => commands.trigger(events::UnionOperationPerformed),
+        CsgOperation::Subtract => commands.trigger(events::SubtractOperationPerformed),
+    };
+}
+
+fn trigger_operation_error_event(operation_type: CsgOperation, commands: &mut Commands) {
+    match operation_type {
+        CsgOperation::Union => commands.trigger(events::UnionOperationErrored),
+        CsgOperation::Subtract => commands.trigger(events::SubtractOperationErrored),
+    };
 }
 
 impl OperationsForest {
@@ -128,9 +207,9 @@ impl Node {
     fn contains(&self, id: &node_id::NodeId) -> bool {
         match self {
             Node::Geometry(node_id) => node_id == id,
-            Node::Union(union) => {
-                let left = union.left.contains(id);
-                let right = union.right.contains(id);
+            Node::Subtract(operation) | Node::Union(operation) => {
+                let left = operation.left.contains(id);
+                let right = operation.right.contains(id);
 
                 left | right
             }
@@ -140,7 +219,7 @@ impl Node {
     fn id(&self) -> node_id::NodeId {
         match self {
             Node::Geometry(node_id) => *node_id,
-            Node::Union(union) => union.id,
+            Node::Union(operation) | Node::Subtract(operation) => operation.id,
         }
     }
 }

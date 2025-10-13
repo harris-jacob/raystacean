@@ -18,6 +18,7 @@ pub enum ControlMode {
     Select,
     PlaceGeometry,
     UnionSelect,
+    SubtractSelect,
 }
 
 #[derive(Resource, Debug, PartialEq, Eq, Clone, Copy)]
@@ -40,6 +41,7 @@ impl ControlMode {
             ControlMode::Select => SelectionPolicy::Single,
             ControlMode::PlaceGeometry => SelectionPolicy::None,
             ControlMode::UnionSelect => SelectionPolicy::Multi(2),
+            ControlMode::SubtractSelect => SelectionPolicy::Multi(2),
         }
     }
 }

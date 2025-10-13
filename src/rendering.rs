@@ -197,7 +197,6 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
 }
 
 fn ops_to_gpu(
-    // TODO: trigger on event
     primatives: Query<&geometry::BoxGeometry>,
     forest: Res<operations::OperationsForest>,
     ops_buffer_handle: Res<OperationsBufferHandle>,
@@ -271,7 +270,7 @@ pub struct GpuPrimative {
 #[repr(C)]
 #[derive(Clone, ShaderType, Default, Debug)]
 struct GpuOp {
-    kind: u32,            // 0 = primative, 1 = union
+    kind: u32,            // 0 = primative, 1 = union, 2 = subtract
     left: u32,            // left child index into OP for union (invalid for primative)
     right: u32,           // left child index into OP for union (invalid for primative)
     primative_index: u32, // for primatives, index into primative buffer
@@ -397,6 +396,24 @@ fn flatten_node(
                 right: r_idx,
                 blend: union.blend,
                 color: union.color,
+                ..default()
+            });
+
+            op_index
+        }
+
+        operations::Node::Subtract(subtract) => {
+            let l_idx = flatten_node(&subtract.left, primatives, out);
+            let r_idx = flatten_node(&subtract.right, primatives, out);
+
+            let op_index = out.len() as u32;
+
+            out.push(GpuOp {
+                kind: 2,
+                left: l_idx,
+                right: r_idx,
+                blend: subtract.blend,
+                color: subtract.color,
                 ..default()
             });
 
