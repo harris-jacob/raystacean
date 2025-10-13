@@ -1,10 +1,10 @@
 #import bevy_pbr::forward_io::VertexOutput
 
-#import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, sd_ground, min_sdf, max_sdf, SdfResult}
+#import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, min_sdf, max_sdf, SdfResult}
 
 const MAX_STEPS: i32 = 100;
-const HIT_THRESHOLD: f32 = 0.01;
-const MAX_DISTANCE: f32 = 500.0;
+const HIT_THRESHOLD: f32 = 0.1;
+const MAX_DISTANCE: f32 = 100.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
 const BLUE: vec3<f32> = vec3(0.0, 0.0, 1.0);
@@ -34,14 +34,6 @@ var<storage, read_write> selection: array<f32>;
 
 var<private> results: array<SdfResult, 100>;
 
-fn sky_color(rd: vec3<f32>) -> vec3<f32> {
-    let t = clamp(0.5 + 0.5 * rd.y, 0.0, 1.0);
-    let horizon = vec3<f32>(0.8, 0.9, 1.0);
-    let zenith  = vec3<f32>(0.4, 0.6, 0.9);
-    return mix(horizon, zenith, t);
-}
-
-
 fn map(p: vec3<f32>) -> SdfResult {
     var sdf = SdfResult(100.0, BLACK);
 
@@ -53,8 +45,6 @@ fn map(p: vec3<f32>) -> SdfResult {
 
         sdf = min_sdf(sdf, b);
     }
-
-    sdf =  min_sdf(sd_ground(p), sdf);
 
     return sdf;
 }
