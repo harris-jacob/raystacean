@@ -153,7 +153,7 @@ fn map_lit(p: vec3<f32>) -> SdfResult {
             results[i].color = node.color;
         } else if (node.kind == 2u) {
             results[i].dist = op_smooth_subtract(results[node.right].dist, results[node.left].dist, node.blend);
-            results[i].color = results[node.left].color;
+            results[i].color = node.color;
         }
     }
 

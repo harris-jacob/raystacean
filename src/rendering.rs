@@ -10,6 +10,7 @@ use bevy::render::view::RenderLayers;
 use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
+use crate::operations::CsgOperation;
 use crate::{events, node_id, operations, selection};
 use crate::{geometry, layers};
 
@@ -197,7 +198,6 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
 }
 
 fn ops_to_gpu(
-    // TODO: trigger on event
     primatives: Query<&geometry::BoxGeometry>,
     forest: Res<operations::OperationsForest>,
     ops_buffer_handle: Res<OperationsBufferHandle>,
@@ -414,6 +414,7 @@ fn flatten_node(
                 left: l_idx,
                 right: r_idx,
                 blend: subtract.blend,
+                color: subtract.color,
                 ..default()
             });
 

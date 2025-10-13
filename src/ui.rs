@@ -120,10 +120,9 @@ fn inspector_ui(
                                 *control_mode = controls::ControlMode::SubtractSelect;
                             }
                         });
+                        ui.end_row();
                     });
                 });
-
-            ui.end_row();
 
             ui.add_space(12.0);
 
@@ -158,8 +157,7 @@ fn csg_tooltip(mut contexts: EguiContexts, control_mode: Res<controls::ControlMo
         .anchor(egui::Align2::CENTER_TOP, [0.0, 10.0])
         .show(ctx, |ui| {
             ui.label(format!(
-                "Select a second primative to create a {}",
-                operation_label
+                "Select a second primative to create a {operation_label}",
             ));
             ui.label("Press esc to cancel");
         });
@@ -191,7 +189,7 @@ fn place_geometry_tooltop(
 
 // When involved in a CSG operation a primative's color is overwritten by the
 // operation. We should show the primative of the 'highest order' CSG operation
-// the primative is involved in
+// the primative is involved in (which will always be a root node).
 fn show_color_for_primative(
     ui: &mut egui::Ui,
     operations: &mut OperationsForest,
@@ -199,20 +197,21 @@ fn show_color_for_primative(
 ) {
     let operation = operations.find_root_mut(&target.id).expect("exists");
 
-    ui.horizontal(|ui| match operation {
-        operations::Node::Geometry(_) => {
-            ui.label("Picker");
-            ui.color_edit_button_rgb(&mut target.color);
-            ui.end_row();
+    ui.horizontal(|ui| {
+        ui.label("Picker");
+
+        match operation {
+            operations::Node::Geometry(_) => {
+                ui.color_edit_button_rgb(&mut target.color);
+            }
+            operations::Node::Subtract(operation) | operations::Node::Union(operation) => {
+                ui.label("Picker");
+                ui.color_edit_button_rgb(&mut operation.color);
+            }
         }
-        operations::Node::Union(union) => {
-            ui.label("Picker");
-            ui.color_edit_button_rgb(&mut union.color);
-            ui.end_row();
-        }
-        // Subtract operations have no color
-        operations::Node::Subtract(_) => {}
     });
+
+    ui.end_row();
 }
 
 fn show_operations_for_selected(
