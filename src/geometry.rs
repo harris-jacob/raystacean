@@ -16,6 +16,8 @@ pub struct BoxGeometry {
     pub scale: Vec3,
     pub color: [f32; 3],
     pub rounding: f32,
+    pub blend: f32,
+    pub is_subtract: bool,
     pub id: node_id::NodeId,
 }
 
@@ -26,7 +28,9 @@ impl BoxGeometry {
             position,
             scale: Vec3::ONE * 2.5,
             rounding: 0.0,
+            blend: 0.0,
             color: id.to_scrambled_color(),
+            is_subtract: false,
             id,
         }
     }
@@ -69,14 +73,9 @@ fn place_box(
         // sit the box on the  plane rather than putting the center on it
         let y = geometry.scale.y;
 
-        let geometry_id = geometry.id;
-
         let entity_id = commands.spawn(geometry.with_y(y)).id();
 
-        commands.trigger(events::GeometryAdded {
-            id: geometry_id,
-            entity: entity_id,
-        });
+        commands.trigger(events::GeometryAdded { entity: entity_id });
 
         *control_mode = controls::ControlMode::Select;
     };

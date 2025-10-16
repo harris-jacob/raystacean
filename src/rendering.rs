@@ -10,7 +10,7 @@ use bevy::render::view::RenderLayers;
 use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
-use crate::{events, node_id, operations, selection};
+use crate::events;
 use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
@@ -22,12 +22,7 @@ impl Plugin for RenderingPlugin {
             .add_systems(Startup, setup)
             .add_systems(
                 Update,
-                (
-                    boxes_to_gpu,
-                    ops_to_gpu,
-                    cursor_position,
-                    window_resize_system,
-                ),
+                (boxes_to_gpu, cursor_position, window_resize_system),
             );
     }
 }
@@ -64,8 +59,6 @@ fn setup(
     let image_handle = images.add(image);
 
     let primatives = buffers.add(ShaderStorageBuffer::default());
-    let operations = buffers.add(ShaderStorageBuffer::default());
-    let op_roots = buffers.add(ShaderStorageBuffer::from(Vec::<u32>::new()));
 
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
@@ -77,8 +70,6 @@ fn setup(
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
         primatives: primatives.clone(),
-        operations: operations.clone(),
-        op_roots: op_roots.clone(),
     });
 
     let selection_material_handle = selection_material.add(SelectionMaterial {
@@ -100,8 +91,6 @@ fn setup(
     );
 
     commands.insert_resource(PrimativesBufferHandle(primatives));
-    commands.insert_resource(OperationsBufferHandle(operations));
-    commands.insert_resource(OpRootsBufferHandle(op_roots));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -185,23 +174,8 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
     commands.trigger(events::PlaneClicked);
 }
 
-fn ops_to_gpu(
-    primatives: Query<&geometry::BoxGeometry>,
-    forest: Res<operations::OperationsForest>,
-    ops_buffer_handle: Res<OperationsBufferHandle>,
-    roots_buffer_handle: Res<OpRootsBufferHandle>,
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
-) {
-    let (gpu_ops, gpu_roots) = flatten_postorder(forest, &primatives);
-    let ops_buffer = ops_buffer_handle.get_mut(&mut buffers);
-    ops_buffer.set_data(gpu_ops);
-
-    let roots_buffer = roots_buffer_handle.get_mut(&mut buffers);
-    roots_buffer.set_data(gpu_roots);
-}
-
 fn boxes_to_gpu(
-    boxes: Query<(&geometry::BoxGeometry, Has<selection::Selected>)>,
+    boxes: Query<&geometry::BoxGeometry>,
     buffer_handle: Res<PrimativesBufferHandle>,
     mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
@@ -209,22 +183,21 @@ fn boxes_to_gpu(
 
     let gpu_data: Vec<GpuPrimative> = boxes
         .iter()
-        .map(|(b, selected)| GpuPrimative {
+        // Sorted by ID to ensure stable operation ordering seen by the shader
+        .sort_by::<&geometry::BoxGeometry>(|a, b| a.id.cmp(&b.id))
+        .map(|b| GpuPrimative {
             position: b.position.into(),
             scale: b.scale.into(),
             color: b.color,
+            blend: b.blend,
             rounding_radius: b.rounding_radius(),
             logical_color: b.id.to_color(),
-            selected: bool_to_gpu(selected),
+            is_subtract: if b.is_subtract { 1 } else { 0 },
             ..default()
         })
         .collect();
 
     buffer.set_data(gpu_data);
-}
-
-fn bool_to_gpu(value: bool) -> u32 {
-    if value { 1 } else { 0 }
 }
 
 fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SelectionMaterial>>) {
@@ -247,24 +220,13 @@ fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<Selecti
 #[derive(Clone, ShaderType, Default)]
 pub struct GpuPrimative {
     pub position: [f32; 3],
-    _pad1: f32,
+    pub is_subtract: u32,
     pub scale: [f32; 3],
-    _pad2: f32,
+    pub blend: f32,
     pub color: [f32; 3],
     pub rounding_radius: f32,
     pub logical_color: [f32; 3],
-    pub selected: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, ShaderType, Default, Debug)]
-struct GpuOp {
-    kind: u32,            // 0 = primative, 1 = union, 2 = subtract
-    left: u32,            // left child index into OP for union (invalid for primative)
-    right: u32,           // left child index into OP for union (invalid for primative)
-    primative_index: u32, // for primatives, index into primative buffer
-    color: [f32; 3],
-    blend: f32,
+    _pad1: f32,
 }
 
 /// Material linked to shader that displays only primative shapes, rendering
@@ -294,20 +256,10 @@ pub struct LitMaterial {
     pub clip_to_view: Mat4,
     #[storage(2, read_only)]
     pub primatives: Handle<ShaderStorageBuffer>,
-    #[storage(3, read_only)]
-    pub operations: Handle<ShaderStorageBuffer>,
-    #[storage(4, read_only)]
-    pub op_roots: Handle<ShaderStorageBuffer>,
 }
 
 #[derive(Resource)]
 pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
-
-#[derive(Resource)]
-pub struct OperationsBufferHandle(Handle<ShaderStorageBuffer>);
-
-#[derive(Resource)]
-pub struct OpRootsBufferHandle(Handle<ShaderStorageBuffer>);
 
 impl PrimativesBufferHandle {
     pub fn get_mut<'a>(
@@ -317,28 +269,6 @@ impl PrimativesBufferHandle {
         assets
             .get_mut(&self.0)
             .expect("ShaderStorageBuffer should exist")
-    }
-}
-
-impl OperationsBufferHandle {
-    pub fn get_mut<'a>(
-        &self,
-        assets: &'a mut Assets<ShaderStorageBuffer>,
-    ) -> &'a mut ShaderStorageBuffer {
-        assets
-            .get_mut(&self.0)
-            .expect("OperationsStorageBuffer should exist")
-    }
-}
-
-impl OpRootsBufferHandle {
-    pub fn get_mut<'a>(
-        &self,
-        assets: &'a mut Assets<ShaderStorageBuffer>,
-    ) -> &'a mut ShaderStorageBuffer {
-        assets
-            .get_mut(&self.0)
-            .expect("OpRootsStorageBuffer should exist")
     }
 }
 
@@ -352,82 +282,4 @@ impl Material for LitMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/lit_shader.wgsl".into()
     }
-}
-
-fn flatten_postorder(
-    forest: Res<operations::OperationsForest>,
-    primatives: &Query<&geometry::BoxGeometry>,
-) -> (Vec<GpuOp>, Vec<u32>) {
-    let mut ops = Vec::new();
-    let mut roots = Vec::new();
-
-    for root in forest.roots.iter() {
-        roots.push(flatten_node(root, primatives, &mut ops));
-    }
-
-    (ops, roots)
-}
-
-fn flatten_node(
-    node: &operations::Node,
-    primatives: &Query<&geometry::BoxGeometry>,
-    out: &mut Vec<GpuOp>,
-) -> u32 {
-    match node {
-        operations::Node::Geometry(node_id) => {
-            let idx = geometry_index_by_id(primatives, node_id);
-
-            let op_index = out.len() as u32;
-
-            out.push(GpuOp {
-                kind: 0,
-                primative_index: idx,
-                ..default()
-            });
-
-            op_index
-        }
-        operations::Node::Union(union) => {
-            let l_idx = flatten_node(&union.left, primatives, out);
-            let r_idx = flatten_node(&union.right, primatives, out);
-
-            let op_index = out.len() as u32;
-
-            out.push(GpuOp {
-                kind: 1,
-                left: l_idx,
-                right: r_idx,
-                blend: union.blend,
-                color: union.color,
-                ..default()
-            });
-
-            op_index
-        }
-
-        operations::Node::Subtract(subtract) => {
-            let l_idx = flatten_node(&subtract.left, primatives, out);
-            let r_idx = flatten_node(&subtract.right, primatives, out);
-
-            let op_index = out.len() as u32;
-
-            out.push(GpuOp {
-                kind: 2,
-                left: l_idx,
-                right: r_idx,
-                blend: subtract.blend,
-                color: subtract.color,
-                ..default()
-            });
-
-            op_index
-        }
-    }
-}
-
-fn geometry_index_by_id(primatives: &Query<&geometry::BoxGeometry>, id: &node_id::NodeId) -> u32 {
-    primatives
-        .iter()
-        .position(|primative| primative.id == *id)
-        .expect("should exist") as u32
 }

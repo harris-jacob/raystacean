@@ -3,7 +3,7 @@
 #import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, min_sdf, max_sdf, SdfResult}
 
 const MAX_STEPS: i32 = 100;
-const HIT_THRESHOLD: f32 = 0.1;
+const HIT_THRESHOLD: f32 = 1;
 const MAX_DISTANCE: f32 = 100.0;
 
 const RED: vec3<f32> = vec3(1.0, 0.0, 0.0);
@@ -17,7 +17,6 @@ struct GpuPrimative {
     color: vec3<f32>,
     rounding: f32,
     logical_color: vec3<f32>,
-    selected: f32,
 }
 
 @group(2) @binding(0)
@@ -31,8 +30,6 @@ var<storage, read> primatives: array<GpuPrimative>;
 @group(2) @binding(4)
 var<storage, read_write> selection: array<f32>;
 
-
-var<private> results: array<SdfResult, 100>;
 
 fn map(p: vec3<f32>) -> SdfResult {
     var sdf = SdfResult(100.0, BLACK);

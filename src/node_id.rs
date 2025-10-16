@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use std::fmt::Display;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId(u32);
 
 impl Display for NodeId {
