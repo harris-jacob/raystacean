@@ -10,11 +10,7 @@ pub struct Selected;
 impl Plugin for SelectionPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.add_observer(box_selection)
-            .add_observer(on_geometry_added)
-            .add_observer(on_operation_errored::<events::SubtractOperationErrored>)
-            .add_observer(on_operation_errored::<events::UnionOperationErrored>)
-            .add_observer(on_operation_performed::<events::UnionOperationPerformed>)
-            .add_observer(on_operation_performed::<events::SubtractOperationPerformed>);
+            .add_observer(on_geometry_added);
     }
 }
 
@@ -33,13 +29,6 @@ fn box_selection(
 
             select_under_cursor(ev, commands, boxes);
         }
-        controls::SelectionPolicy::Multi(size) => {
-            if selected.iter().len() > size {
-                return;
-            }
-
-            select_under_cursor(ev, commands, boxes);
-        }
     }
 }
 
@@ -55,21 +44,6 @@ fn select_under_cursor(
             commands.entity(newly_selected.0).insert(Selected);
         }
     }
-}
-
-fn on_operation_performed<E: Event>(
-    _event: Trigger<E>,
-    selected: Query<Entity, With<Selected>>,
-    mut commands: Commands,
-) {
-    deselect_selected(selected, &mut commands);
-}
-fn on_operation_errored<E: Event>(
-    _event: Trigger<E>,
-    selected: Query<Entity, With<Selected>>,
-    mut commands: Commands,
-) {
-    deselect_selected(selected, &mut commands);
 }
 
 fn on_geometry_added(

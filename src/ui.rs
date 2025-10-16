@@ -1,14 +1,13 @@
-use bevy::prelude::*;
+use bevy::{
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+};
 use bevy_egui::{
     EguiContexts, EguiPlugin, EguiPrimaryContextPass,
     egui::{self, RichText},
 };
 
-use crate::{
-    controls, geometry, node_id,
-    operations::{self, OperationsForest},
-    selection,
-};
+use crate::{controls, geometry, selection};
 
 pub struct UiPlugin;
 
@@ -19,8 +18,8 @@ impl Plugin for UiPlugin {
             (
                 toolbar_ui,
                 inspector_ui,
-                csg_tooltip,
                 place_geometry_tooltop,
+                diagnostics_ui,
             ),
         );
     }
@@ -58,8 +57,7 @@ pub fn toolbar_ui(
 fn inspector_ui(
     mut contexts: EguiContexts,
     mut selected: Query<&mut geometry::BoxGeometry, With<selection::Selected>>,
-    mut operations: ResMut<OperationsForest>,
-    mut control_mode: ResMut<controls::ControlMode>,
+    control_mode: ResMut<controls::ControlMode>,
 ) -> Result {
     // We only want to show this ui in select mode
     if *control_mode != controls::ControlMode::Select {
@@ -91,76 +89,24 @@ fn inspector_ui(
                         });
                         ui.end_row();
 
-                        show_color_for_primative(ui, &mut operations, &mut selected);
+                        ui.label("Picker");
+                        ui.color_edit_button_rgb(&mut selected.color);
+                        ui.end_row();
 
                         ui.label("Rounding");
                         ui.add(egui::Slider::new(&mut selected.rounding, 0.0..=1.0));
                         ui.end_row();
 
-                        let union_text = RichText::new("union").size(14.0);
-                        let begin_union_button = egui::Button::new(union_text);
+                        ui.label("Blend");
+                        ui.add(egui::Slider::new(&mut selected.blend, 0.0..=1.0));
+                        ui.end_row();
 
-                        let subtract_text = RichText::new("subtract").size(14.0);
-                        let begin_subtract_button = egui::Button::new(subtract_text);
-
-                        ui.label("Actions");
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add(begin_union_button)
-                                .on_hover_text("begin union")
-                                .clicked()
-                            {
-                                *control_mode = controls::ControlMode::UnionSelect;
-                            }
-                            if ui
-                                .add(begin_subtract_button)
-                                .on_hover_text("begin subtract")
-                                .clicked()
-                            {
-                                *control_mode = controls::ControlMode::SubtractSelect;
-                            }
-                        });
+                        ui.add(egui::Checkbox::new(&mut selected.is_subtract, "Subtract"));
                         ui.end_row();
                     });
                 });
-
-            ui.add_space(12.0);
-
-            ui.label(egui::RichText::new("Operations").heading());
-
-            ui.add_space(4.0);
-
-            egui::Grid::new("Operations list")
-                .striped(true)
-                .show(ui, |ui| {
-                    show_operations_for_selected(ui, operations, selected);
-                })
         });
     }
-
-    Ok(())
-}
-
-fn csg_tooltip(mut contexts: EguiContexts, control_mode: Res<controls::ControlMode>) -> Result {
-    let operation_label = match *control_mode {
-        controls::ControlMode::Select => return Ok(()),
-        controls::ControlMode::PlaceGeometry => return Ok(()),
-        controls::ControlMode::UnionSelect => "Union",
-        controls::ControlMode::SubtractSelect => "Subtract",
-    };
-
-    let ctx = contexts.ctx_mut()?;
-
-    egui::Window::new("Union Mode")
-        .title_bar(false)
-        .collapsible(false)
-        .anchor(egui::Align2::CENTER_TOP, [0.0, 10.0])
-        .show(ctx, |ui| {
-            ui.label(format!(
-                "Select a second primative to create a {operation_label}",
-            ));
-            ui.label("Press esc to cancel");
-        });
 
     Ok(())
 }
@@ -187,70 +133,31 @@ fn place_geometry_tooltop(
     Ok(())
 }
 
-// When involved in a CSG operation a primative's color is overwritten by the
-// operation. We should show the primative of the 'highest order' CSG operation
-// the primative is involved in (which will always be a root node).
-fn show_color_for_primative(
-    ui: &mut egui::Ui,
-    operations: &mut OperationsForest,
-    target: &mut geometry::BoxGeometry,
-) {
-    let operation = operations.find_root_mut(&target.id).expect("exists");
+fn diagnostics_ui(mut contexts: EguiContexts, diagnostics: Res<DiagnosticsStore>) -> Result {
+    let ctx = contexts.ctx_mut()?;
 
-    ui.horizontal(|ui| {
-        ui.label("Picker");
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed());
 
-        match operation {
-            operations::Node::Geometry(_) => {
-                ui.color_edit_button_rgb(&mut target.color);
+    let frame_time = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|d| d.smoothed());
+
+    egui::Window::new("Performance")
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))
+        .resizable(false)
+        .show(ctx, |ui| {
+            if let Some(fps) = fps {
+                ui.label(RichText::new(format!("FPS: {}", fps.round())).size(16.0));
+            } else {
+                ui.label("FPS: calculating…");
             }
-            operations::Node::Subtract(operation) | operations::Node::Union(operation) => {
-                ui.color_edit_button_rgb(&mut operation.color);
-            }
-        }
-    });
 
-    ui.end_row();
-}
-
-fn show_operations_for_selected(
-    ui: &mut egui::Ui,
-    mut operations: ResMut<OperationsForest>,
-    selected: Mut<geometry::BoxGeometry>,
-) {
-    for root in operations.roots.iter_mut() {
-        show_operations_for_primative(ui, root, selected.id);
-    }
-}
-
-fn show_operations_for_primative(
-    ui: &mut egui::Ui,
-    node: &mut operations::Node,
-    target: node_id::NodeId,
-) -> bool {
-    match node {
-        operations::Node::Geometry(id) => *id == target,
-        operations::Node::Union(union) => {
-            if show_operations_for_primative(ui, &mut union.left, target)
-                || show_operations_for_primative(ui, &mut union.right, target)
-            {
-                ui.label(format!("Union {}", union.id));
-                ui.add(egui::Slider::new(&mut union.blend, 0.0..=1.0));
-                ui.end_row();
-                return true;
+            if let Some(ft) = frame_time {
+                ui.label(format!("Frame time: {ft:.2} ms"));
             }
-            false
-        }
-        operations::Node::Subtract(subtract) => {
-            if show_operations_for_primative(ui, &mut subtract.left, target)
-                || show_operations_for_primative(ui, &mut subtract.right, target)
-            {
-                ui.label(format!("Subtract {}", subtract.id));
-                ui.add(egui::Slider::new(&mut subtract.blend, 0.0..=1.0));
-                ui.end_row();
-                return true;
-            }
-            false
-        }
-    }
+        });
+
+    Ok(())
 }
