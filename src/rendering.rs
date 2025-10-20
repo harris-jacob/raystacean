@@ -1,22 +1,22 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
+use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
-use bevy::render::render_resource::{
-    AsBindGroup, BufferUsages, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
-    TextureUsages,
-};
+use bevy::render::render_resource::*;
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::view::RenderLayers;
 use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
-use crate::events;
+use crate::{events, world};
 use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(ExtractResourcePlugin::<WorldSpaceTextureHandle>::default());
+
         app.add_plugins(MaterialPlugin::<LitMaterial>::default())
             .add_plugins(MaterialPlugin::<SelectionMaterial>::default())
             .add_systems(Startup, setup)
@@ -53,10 +53,31 @@ fn setup(
         RenderAssetUsages::default(),
     );
 
-    image.texture_descriptor.usage =
-        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+    image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
+        | TextureUsages::COPY_DST
+        | TextureUsages::STORAGE_BINDING
+        | TextureUsages::RENDER_ATTACHMENT;
 
-    let image_handle = images.add(image);
+    let color_pick_texture = images.add(image);
+
+    let mut image = Image::new_fill(
+        Extent3d {
+            width: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
+            height: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
+            depth_or_array_layers: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
+        },
+        TextureDimension::D3,
+        &[0u8; 4],
+        TextureFormat::R32Float,
+        RenderAssetUsages::default(),
+    );
+
+    image.texture_descriptor.usage =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING;
+
+    let world_space_texture = images.add(image);
+
+    commands.insert_resource(WorldSpaceTextureHandle(world_space_texture.clone()));
 
     let primatives = buffers.add(ShaderStorageBuffer::default());
 
@@ -69,7 +90,7 @@ fn setup(
     let lit_material_handle = lit_material.add(LitMaterial {
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        primatives: primatives.clone(),
+        voxel_texture: world_space_texture,
     });
 
     let selection_material_handle = selection_material.add(SelectionMaterial {
@@ -136,7 +157,7 @@ fn setup(
         Camera3d::default(),
         Camera {
             order: layers::SELECTION_CAMERA,
-            target: image_handle.clone().into(),
+            target: color_pick_texture.clone().into(),
             clear_color: Color::WHITE.into(),
             ..default()
         },
@@ -254,12 +275,16 @@ pub struct LitMaterial {
     pub view_to_world: Mat4,
     #[uniform(1)]
     pub clip_to_view: Mat4,
-    #[storage(2, read_only)]
-    pub primatives: Handle<ShaderStorageBuffer>,
+    #[texture(2, dimension = "3d")]
+    #[sampler(3)]
+    pub voxel_texture: Handle<Image>,
 }
 
 #[derive(Resource)]
 pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
+
+#[derive(Resource, ExtractResource, Clone)]
+pub struct WorldSpaceTextureHandle(pub Handle<Image>);
 
 impl PrimativesBufferHandle {
     pub fn get_mut<'a>(
