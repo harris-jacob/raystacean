@@ -21,10 +21,10 @@ var voxel_sampler: sampler;
 
 const WORLD_SIZE: f32 = 256.0;
 
-fn map(p: vec3<f32>) -> f32 {
+fn map(p: vec3<f32>) -> vec4<f32> {
     let tex_coord = (p + WORLD_SIZE * 0.5) / WORLD_SIZE;
 
-    return textureSample(voxel_texture, voxel_sampler, tex_coord).r;
+    return textureSample(voxel_texture, voxel_sampler, tex_coord);
 }
 
 
@@ -39,16 +39,16 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
         let result = map(pos);
 
         // Hit something
-        if(result < HIT_THRESHOLD) {
+        if(result.a < HIT_THRESHOLD) {
 
-            let lit_color = calc_lighting(pos, RED, camera_dir);
+            let lit_color = calc_lighting(pos, result.rgb, camera_dir);
             
             return lit_color;
         }
 
-        dist = dist + result;
+        dist = dist + result.a;
 
-        if(result > MAX_DISTANCE) {
+        if(result.a > MAX_DISTANCE) {
             break;
         }
     }
@@ -156,7 +156,7 @@ fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f3
     var t: f32 = min_dist;
     var res: f32 = 1.0;
     for (var i: i32 = 0; i < 32; i = i + 1) {
-        let h = map(ro + rd * t);
+        let h = map(ro + rd * t).a;
         if (h < 0.001) {
             return 0.0;
         }
@@ -169,8 +169,8 @@ fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f3
 
 fn calc_normal(p: vec3<f32>) -> vec3<f32> {
     let e: f32 = 0.001;
-    let dx = map(p + vec3<f32>(e,0,0)) - map(p - vec3<f32>(e,0,0));
-    let dy = map(p + vec3<f32>(0,e,0)) - map(p - vec3<f32>(0,e,0));
-    let dz = map(p + vec3<f32>(0,0,e)) - map(p - vec3<f32>(0,0,e));
+    let dx = map(p + vec3<f32>(e,0,0)).a - map(p - vec3<f32>(e,0,0)).a;
+    let dy = map(p + vec3<f32>(0,e,0)).a - map(p - vec3<f32>(0,e,0)).a;
+    let dz = map(p + vec3<f32>(0,0,e)).a - map(p - vec3<f32>(0,0,e)).a;
     return normalize(vec3<f32>(dx, dy, dz));
 }

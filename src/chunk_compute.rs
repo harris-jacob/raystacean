@@ -85,7 +85,7 @@ impl FromWorld for SdfComputePipeline {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::R32Float,
+                        format: TextureFormat::Rgba32Float,
                         view_dimension: TextureViewDimension::D3,
                     },
                     count: None,
@@ -133,11 +133,6 @@ fn prepare_bind_groups(
         let texture = gpu_images
             .get(&voxel_texture.0)
             .expect("exists");
-
-        #[derive(ShaderType)]
-        struct ChunkIndex {
-            idx: [u32; 4]
-        }
 
         let mut uniform_buffer = UniformBuffer::from(chunk.idx.to_vec());
         uniform_buffer.write_buffer(&render_device, &queue);

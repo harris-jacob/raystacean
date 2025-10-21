@@ -1,5 +1,5 @@
 @group(0) @binding(0)
-var sdf_output: texture_storage_3d<r32float, write>;
+var sdf_output: texture_storage_3d<rgba32float, write>;
 
 @group(0) @binding(1)
 var<uniform> chunk_index: vec3<u32>;
@@ -25,5 +25,5 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     let dist = length(world_pos) - 1.0;
 
-    textureStore(sdf_output, global_voxel, vec4<f32>(dist, 0.0, 0.0, 0.0));
+    textureStore(sdf_output, global_voxel, vec4<f32>(0.0, 1.0, 0.0, dist));
 }

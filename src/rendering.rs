@@ -67,8 +67,8 @@ fn setup(
             depth_or_array_layers: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
         },
         TextureDimension::D3,
-        &[0u8; 4],
-        TextureFormat::R32Float,
+        &[0u8; 16],
+        TextureFormat::Rgba32Float,
         RenderAssetUsages::default(),
     );
 
