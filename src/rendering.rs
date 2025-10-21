@@ -20,10 +20,7 @@ impl Plugin for RenderingPlugin {
         app.add_plugins(MaterialPlugin::<LitMaterial>::default())
             .add_plugins(MaterialPlugin::<SelectionMaterial>::default())
             .add_systems(Startup, setup)
-            .add_systems(
-                Update,
-                (boxes_to_gpu, cursor_position, window_resize_system),
-            );
+            .add_systems(Update, (cursor_position, window_resize_system));
     }
 }
 
@@ -79,8 +76,6 @@ fn setup(
 
     commands.insert_resource(WorldSpaceTextureHandle(world_space_texture.clone()));
 
-    let primatives = buffers.add(ShaderStorageBuffer::default());
-
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
     selection_buffer.buffer_description.usage |= BufferUsages::COPY_SRC;
@@ -110,8 +105,6 @@ fn setup(
             )));
         },
     );
-
-    commands.insert_resource(PrimativesBufferHandle(primatives));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -195,32 +188,6 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
     commands.trigger(events::PlaneClicked);
 }
 
-fn boxes_to_gpu(
-    boxes: Query<&geometry::BoxGeometry>,
-    buffer_handle: Res<PrimativesBufferHandle>,
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
-) {
-    let buffer = buffer_handle.get_mut(&mut buffers);
-
-    let gpu_data: Vec<GpuPrimative> = boxes
-        .iter()
-        // Sorted by ID to ensure stable operation ordering seen by the shader
-        .sort_by::<&geometry::BoxGeometry>(|a, b| a.id.cmp(&b.id))
-        .map(|b| GpuPrimative {
-            position: b.position.into(),
-            scale: b.scale.into(),
-            color: b.color,
-            blend: b.blend,
-            rounding_radius: b.rounding_radius(),
-            logical_color: b.id.to_color(),
-            is_subtract: if b.is_subtract { 1 } else { 0 },
-            ..default()
-        })
-        .collect();
-
-    buffer.set_data(gpu_data);
-}
-
 fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SelectionMaterial>>) {
     let window = windows.single().expect("single");
 
@@ -235,19 +202,6 @@ fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<Selecti
             (cursor_pos.y / window.height() * 2.0) - 1.0,
         );
     }
-}
-
-#[repr(C)]
-#[derive(Clone, ShaderType, Default)]
-pub struct GpuPrimative {
-    pub position: [f32; 3],
-    pub is_subtract: u32,
-    pub scale: [f32; 3],
-    pub blend: f32,
-    pub color: [f32; 3],
-    pub rounding_radius: f32,
-    pub logical_color: [f32; 3],
-    _pad1: f32,
 }
 
 /// Material linked to shader that displays only primative shapes, rendering
@@ -280,22 +234,8 @@ pub struct LitMaterial {
     pub voxel_texture: Handle<Image>,
 }
 
-#[derive(Resource)]
-pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
-
 #[derive(Resource, ExtractResource, Clone)]
 pub struct WorldSpaceTextureHandle(pub Handle<Image>);
-
-impl PrimativesBufferHandle {
-    pub fn get_mut<'a>(
-        &self,
-        assets: &'a mut Assets<ShaderStorageBuffer>,
-    ) -> &'a mut ShaderStorageBuffer {
-        assets
-            .get_mut(&self.0)
-            .expect("ShaderStorageBuffer should exist")
-    }
-}
 
 impl Material for SelectionMaterial {
     fn fragment_shader() -> ShaderRef {

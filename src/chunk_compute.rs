@@ -1,12 +1,13 @@
 use bevy::prelude::*;
 use bevy::render::extract_component::ExtractComponentPlugin;
-use bevy::render::extract_resource::ExtractResourcePlugin;
+use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::renderer::{RenderDevice, RenderQueue};
+use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::texture::GpuImage;
 use bevy::render::{Render, RenderApp, RenderSet, render_resource::*};
 
-use crate::{rendering, world};
+use crate::{geometry, rendering, world};
 
 pub struct ChunkComputePlugin;
 
@@ -43,9 +44,74 @@ fn chunk_compute(
     render_queue.submit(Some(encoder.finish()));
 }
 
+fn setup_primatives_buffer(
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut commands: Commands,
+) {
+    let primatives = buffers.add(ShaderStorageBuffer::default());
+    commands.insert_resource(PrimativesBufferHandle(primatives));
+}
+
+#[repr(C)]
+#[derive(Clone, ShaderType, Default)]
+pub struct GpuPrimative {
+    pub position: [f32; 3],
+    pub is_subtract: u32,
+    pub scale: [f32; 3],
+    pub blend: f32,
+    pub color: [f32; 3],
+    pub rounding_radius: f32,
+    pub logical_color: [f32; 3],
+    _pad1: f32,
+}
+
+fn boxes_to_gpu(
+    boxes: Query<&geometry::BoxGeometry>,
+    buffer_handle: Res<PrimativesBufferHandle>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+) {
+    let buffer = buffer_handle.get_mut(&mut buffers);
+
+    let gpu_data: Vec<GpuPrimative> = boxes
+        .iter()
+        // Sorted by ID to ensure stable operation ordering seen by the shader
+        .sort_by::<&geometry::BoxGeometry>(|a, b| a.id.cmp(&b.id))
+        .map(|b| GpuPrimative {
+            position: b.position.into(),
+            scale: b.scale.into(),
+            color: b.color,
+            blend: b.blend,
+            rounding_radius: b.rounding_radius(),
+            logical_color: b.id.to_color(),
+            is_subtract: if b.is_subtract { 1 } else { 0 },
+            ..default()
+        })
+        .collect();
+
+    buffer.set_data(gpu_data);
+}
+
+#[derive(Resource, ExtractResource, Clone)]
+pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
+
+impl PrimativesBufferHandle {
+    pub fn get_mut<'a>(
+        &self,
+        assets: &'a mut Assets<ShaderStorageBuffer>,
+    ) -> &'a mut ShaderStorageBuffer {
+        assets
+            .get_mut(&self.0)
+            .expect("ShaderStorageBuffer should exist")
+    }
+}
+
 impl Plugin for ChunkComputePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(ExtractComponentPlugin::<world::Chunk>::default());
+        app.add_plugins(ExtractResourcePlugin::<PrimativesBufferHandle>::default());
+
+        app.add_systems(Startup, setup_primatives_buffer)
+            .add_systems(Update, boxes_to_gpu);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app.add_systems(
@@ -100,6 +166,16 @@ impl FromWorld for SdfComputePipeline {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         );
 
@@ -113,10 +189,7 @@ impl FromWorld for SdfComputePipeline {
             zero_initialize_workgroup_memory: false,
         });
 
-        Self {
-            pipeline,
-            layout,
-        }
+        Self { pipeline, layout }
     }
 }
 
@@ -130,9 +203,7 @@ fn prepare_bind_groups(
     queue: Res<RenderQueue>,
 ) {
     for (chunk, entity) in chunks.iter() {
-        let texture = gpu_images
-            .get(&voxel_texture.0)
-            .expect("exists");
+        let texture = gpu_images.get(&voxel_texture.0).expect("exists");
 
         let mut uniform_buffer = UniformBuffer::from(chunk.idx.to_vec());
         uniform_buffer.write_buffer(&render_device, &queue);

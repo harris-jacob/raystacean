@@ -1,8 +1,19 @@
 @group(0) @binding(0)
 var sdf_output: texture_storage_3d<rgba32float, write>;
-
 @group(0) @binding(1)
 var<uniform> chunk_index: vec3<u32>;
+@group(0) @binding(2)
+var<storage, read> primatives: array<GpuPrimatives>;
+
+struct GpuPrimative {
+    position: vec3<f32>,
+    is_subtract: u32,
+    scale: vec3<f32>, 
+    blend: f32,
+    color: vec3<f32>,
+    rounding: f32,
+    logical_color: vec3<f32>,
+}
 
 const CHUNK_RESOLUTION: u32 = 32u;
 // CHUNK_RESOLUTION / CHUNK_SIZE
