@@ -46,7 +46,6 @@ fn map(p: vec3<f32>) -> SdfResult {
         } else {
             sdf = sd_smooth_union(sdf, b, box.blend);
         }
-        
     }
 
     sdf = min_sdf(sdf, sd_ground(p));

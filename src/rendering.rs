@@ -88,13 +88,13 @@ fn setup(
         voxel_texture: world_space_texture,
     });
 
-    let selection_material_handle = selection_material.add(SelectionMaterial {
-        view_to_world: Mat4::default(),
-        clip_to_view: Mat4::default(),
-        primatives: primatives.clone(),
-        selection: selection.clone(),
-        cursor_position: Vec2::default(),
-    });
+//     let selection_material_handle = selection_material.add(SelectionMaterial {
+//         view_to_world: Mat4::default(),
+//         clip_to_view: Mat4::default(),
+//         // primatives: primatives.clone(),
+//         selection: selection.clone(),
+//         cursor_position: Vec2::default(),
+//     });
 
     commands.spawn(Readback::buffer(selection)).observe(
         |trigger: Trigger<ReadbackComplete>, mut ev: EventWriter<events::PixelColorUnderCursor>| {
@@ -141,7 +141,7 @@ fn setup(
         .spawn((
             RenderingPlane,
             Mesh3d(mesh),
-            MeshMaterial3d(selection_material_handle),
+            // MeshMaterial3d(selection_material_handle),
             RenderLayers::layer(layers::SELECTION_LAYER),
         ))
         .observe(output_click_event);

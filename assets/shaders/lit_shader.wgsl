@@ -1,9 +1,9 @@
 #import bevy_pbr::forward_io::VertexOutput
 #import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, min_sdf, max_sdf, SdfResult}
 
-const MAX_STEPS: i32 = 100;
-const HIT_THRESHOLD: f32 = 0.001;
-const MAX_DISTANCE: f32 = 200.0;
+const MAX_STEPS: i32 = 50000;
+const HIT_THRESHOLD: f32 = 0.1;
+const MAX_DISTANCE: f32 = 1000.0;
 
 const WORLD_BOUNDS: f32 = 128.0;
 const CHUNK_SIZE: f32 = 16.0;
@@ -24,7 +24,11 @@ const WORLD_SIZE: f32 = 256.0;
 fn map(p: vec3<f32>) -> vec4<f32> {
     let tex_coord = (p + WORLD_SIZE * 0.5) / WORLD_SIZE;
 
-    return textureSample(voxel_texture, voxel_sampler, tex_coord);
+    if (any(tex_coord < vec3<f32>(0.0)) || any(tex_coord > vec3<f32>(1.0))) {
+        return vec4<f32>(vec3<f32>(0.0), 1e2);
+    }
+
+    return textureSampleLevel(voxel_texture, voxel_sampler, tex_coord, 0.0);
 }
 
 
@@ -43,12 +47,12 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
 
             let lit_color = calc_lighting(pos, result.rgb, camera_dir);
             
-            return lit_color;
+            return result.rgb;
         }
 
-        dist = dist + result.a;
+        dist = dist + 0.1;
 
-        if(result.a > MAX_DISTANCE) {
+        if(dist > MAX_DISTANCE) {
             break;
         }
     }

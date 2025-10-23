@@ -3,9 +3,9 @@ use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::renderer::{RenderDevice, RenderQueue};
-use bevy::render::storage::ShaderStorageBuffer;
+use bevy::render::storage::{GpuShaderStorageBuffer, ShaderStorageBuffer};
 use bevy::render::texture::GpuImage;
-use bevy::render::{Render, RenderApp, RenderSet, render_resource::*};
+use bevy::render::{Extract, Render, RenderApp, RenderSet, render_resource::*};
 
 use crate::{geometry, rendering, world};
 
@@ -91,6 +91,17 @@ fn boxes_to_gpu(
     buffer.set_data(gpu_data);
 }
 
+fn debug_gpu_buffer(
+    gpu_buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
+    primatives: Res<PrimativesBufferHandle>,
+) {
+    if let Some(gpu) = gpu_buffers.get(&primatives.0) {
+        info!("GPU buffer size = {}", gpu.buffer.size());
+    } else {
+        warn!("GPU buffer missing");
+    }
+}
+
 #[derive(Resource, ExtractResource, Clone)]
 pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
 
@@ -109,15 +120,21 @@ impl Plugin for ChunkComputePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(ExtractComponentPlugin::<world::Chunk>::default());
         app.add_plugins(ExtractResourcePlugin::<PrimativesBufferHandle>::default());
+        app.add_plugins(ExtractResourcePlugin::<ExtractedPrimatives>::default());
 
-        app.add_systems(Startup, setup_primatives_buffer)
-            .add_systems(Update, boxes_to_gpu);
+        app.add_systems(
+            Startup,
+            (setup_primatives_buffer, setup_extracted_primatives),
+        )
+        .add_systems(Update, (boxes_to_gpu, extract_boxes));
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app.add_systems(
             Render,
             (
+                upload_prims_to_gpu.in_set(RenderSet::PrepareResources),
                 prepare_bind_groups.in_set(RenderSet::PrepareBindGroups),
+                debug_gpu_buffer.in_set(RenderSet::Render),
                 chunk_compute.in_set(RenderSet::Render),
             ),
         );
@@ -129,10 +146,52 @@ impl Plugin for ChunkComputePlugin {
     }
 }
 
+// Extract CPU boxes -> render-world Vec<GpuPrimative>
+#[derive(Resource, ExtractResource, Clone, Default)]
+pub struct ExtractedPrimatives(pub Vec<GpuPrimative>);
+
+fn setup_extracted_primatives(mut commands: Commands) {
+    commands.insert_resource(ExtractedPrimatives::default())
+}
+
+// Main world: build the vec (reuse your existing code)
+fn extract_boxes(mut out: ResMut<ExtractedPrimatives>, boxes: Query<&geometry::BoxGeometry>) {
+    out.0.clear();
+    for b in boxes
+        .iter()
+        .sort_by::<&geometry::BoxGeometry>(|a, b| a.id.cmp(&b.id))
+    {
+        out.0.push(GpuPrimative {
+            position: b.position.into(),
+            scale: b.scale.into(),
+            color: b.color,
+            blend: b.blend,
+            rounding_radius: b.rounding_radius(),
+            logical_color: b.id.to_color(),
+            is_subtract: u32::from(b.is_subtract),
+            ..Default::default()
+        });
+    }
+}
+
+// Render world: write into the persistent StorageBuffer
+fn upload_prims_to_gpu(
+    mut pipeline: ResMut<SdfComputePipeline>,
+    prims: Res<ExtractedPrimatives>,
+    render_device: Res<RenderDevice>,
+    queue: Res<RenderQueue>,
+) {
+    pipeline.primative_buffer.set(prims.0.clone()); // update CPU-side contents
+    pipeline
+        .primative_buffer
+        .write_buffer(&render_device, &queue); // upload to GPU (same wgpu::Buffer)
+}
+
 #[derive(Resource)]
 struct SdfComputePipeline {
     pipeline: CachedComputePipelineId,
     layout: BindGroupLayout,
+    primative_buffer: StorageBuffer<Vec<GpuPrimative>>,
 }
 
 impl FromWorld for SdfComputePipeline {
@@ -140,8 +199,14 @@ impl FromWorld for SdfComputePipeline {
         let render_device = world.resource::<RenderDevice>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let asset_server = world.resource::<AssetServer>();
+        let queue = world.resource::<RenderQueue>();
 
         let shader = asset_server.load("shaders/chunk_compute.wgsl");
+
+        let mut primative_buffer =
+            StorageBuffer::from(vec![GpuPrimative::default(), GpuPrimative::default()]);
+
+        primative_buffer.write_buffer(render_device, queue);
 
         let layout = render_device.create_bind_group_layout(
             Some("chunk_compute_bgl"),
@@ -189,7 +254,11 @@ impl FromWorld for SdfComputePipeline {
             zero_initialize_workgroup_memory: false,
         });
 
-        Self { pipeline, layout }
+        Self {
+            pipeline,
+            layout,
+            primative_buffer,
+        }
     }
 }
 
@@ -211,7 +280,11 @@ fn prepare_bind_groups(
         let bind_group = render_device.create_bind_group(
             None,
             &pipeline.layout,
-            &BindGroupEntries::sequential((&texture.texture_view, &uniform_buffer)),
+            &BindGroupEntries::sequential((
+                &texture.texture_view,
+                &uniform_buffer,
+                &pipeline.primative_buffer,
+            )),
         );
 
         commands.entity(entity).insert(ComputeChunk {
