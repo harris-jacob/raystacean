@@ -3,9 +3,9 @@ use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::renderer::{RenderDevice, RenderQueue};
-use bevy::render::storage::{GpuShaderStorageBuffer, ShaderStorageBuffer};
+use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::texture::GpuImage;
-use bevy::render::{Extract, Render, RenderApp, RenderSet, render_resource::*};
+use bevy::render::{Render, RenderApp, RenderSet, render_resource::*};
 
 use crate::{geometry, rendering, world};
 
@@ -53,7 +53,7 @@ fn setup_primatives_buffer(
 }
 
 #[repr(C)]
-#[derive(Clone, ShaderType, Default)]
+#[derive(Clone, ShaderType, Default, Debug)]
 pub struct GpuPrimative {
     pub position: [f32; 3],
     pub is_subtract: u32,
@@ -91,17 +91,6 @@ fn boxes_to_gpu(
     buffer.set_data(gpu_data);
 }
 
-fn debug_gpu_buffer(
-    gpu_buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
-    primatives: Res<PrimativesBufferHandle>,
-) {
-    if let Some(gpu) = gpu_buffers.get(&primatives.0) {
-        info!("GPU buffer size = {}", gpu.buffer.size());
-    } else {
-        warn!("GPU buffer missing");
-    }
-}
-
 #[derive(Resource, ExtractResource, Clone)]
 pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
 
@@ -134,7 +123,6 @@ impl Plugin for ChunkComputePlugin {
             (
                 upload_prims_to_gpu.in_set(RenderSet::PrepareResources),
                 prepare_bind_groups.in_set(RenderSet::PrepareBindGroups),
-                debug_gpu_buffer.in_set(RenderSet::Render),
                 chunk_compute.in_set(RenderSet::Render),
             ),
         );
@@ -181,10 +169,15 @@ fn upload_prims_to_gpu(
     render_device: Res<RenderDevice>,
     queue: Res<RenderQueue>,
 ) {
-    pipeline.primative_buffer.set(prims.0.clone()); // update CPU-side contents
+    pipeline.primative_buffer.set(prims.0.clone());
     pipeline
         .primative_buffer
-        .write_buffer(&render_device, &queue); // upload to GPU (same wgpu::Buffer)
+        .write_buffer(&render_device, &queue);
+
+    pipeline
+        .primative_meta
+        .set(UVec4::new(prims.0.len() as u32, 0, 0, 0));
+    pipeline.primative_meta.write_buffer(&render_device, &queue);
 }
 
 #[derive(Resource)]
@@ -192,6 +185,7 @@ struct SdfComputePipeline {
     pipeline: CachedComputePipelineId,
     layout: BindGroupLayout,
     primative_buffer: StorageBuffer<Vec<GpuPrimative>>,
+    primative_meta: UniformBuffer<UVec4>,
 }
 
 impl FromWorld for SdfComputePipeline {
@@ -203,10 +197,12 @@ impl FromWorld for SdfComputePipeline {
 
         let shader = asset_server.load("shaders/chunk_compute.wgsl");
 
-        let mut primative_buffer =
-            StorageBuffer::from(vec![GpuPrimative::default(), GpuPrimative::default()]);
+        let mut primative_buffer = StorageBuffer::from(vec![GpuPrimative::default(); 100]);
+
+        let mut primative_meta = UniformBuffer::from(UVec4::default());
 
         primative_buffer.write_buffer(render_device, queue);
+        primative_meta.write_buffer(render_device, queue);
 
         let layout = render_device.create_bind_group_layout(
             Some("chunk_compute_bgl"),
@@ -241,6 +237,16 @@ impl FromWorld for SdfComputePipeline {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: BufferSize::new(16),
+                    },
+                    count: None,
+                },
             ],
         );
 
@@ -258,6 +264,7 @@ impl FromWorld for SdfComputePipeline {
             pipeline,
             layout,
             primative_buffer,
+            primative_meta,
         }
     }
 }
@@ -284,6 +291,7 @@ fn prepare_bind_groups(
                 &texture.texture_view,
                 &uniform_buffer,
                 &pipeline.primative_buffer,
+                &pipeline.primative_meta,
             )),
         );
 

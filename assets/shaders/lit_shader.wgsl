@@ -1,9 +1,9 @@
 #import bevy_pbr::forward_io::VertexOutput
 #import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, min_sdf, max_sdf, SdfResult}
 
-const MAX_STEPS: i32 = 50000;
-const HIT_THRESHOLD: f32 = 0.1;
-const MAX_DISTANCE: f32 = 1000.0;
+const MAX_STEPS: i32 = 1000;
+const HIT_THRESHOLD: f32 = 0.001;
+const MAX_DISTANCE: f32 = 500.0;
 
 const WORLD_BOUNDS: f32 = 128.0;
 const CHUNK_SIZE: f32 = 16.0;
@@ -47,10 +47,10 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
 
             let lit_color = calc_lighting(pos, result.rgb, camera_dir);
             
-            return result.rgb;
+            return lit_color;
         }
 
-        dist = dist + 0.1;
+        dist = dist + 0.1 * result.a;
 
         if(dist > MAX_DISTANCE) {
             break;

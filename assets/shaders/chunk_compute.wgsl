@@ -6,6 +6,8 @@ var sdf_output: texture_storage_3d<rgba32float, write>;
 var<uniform> chunk_index: vec3<u32>;
 @group(0) @binding(2)
 var<storage, read> primatives: array<GpuPrimative>;
+@group(0) @binding(3)
+var<uniform> primatives_meta: vec4<u32>; // only x used = count
 
 struct GpuPrimative {
     position: vec3<f32>,
@@ -39,7 +41,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         - WORLD_SIZE * 0.5;
 
     var sdf = SdfResult(100.0, BLACK);
-    for (var i = 0u; i < arrayLength(&primatives); i++) {
+    for (var i = 0u; i < primatives_meta.x; i++) {
         let box = primatives[i];
 
         let color = box.color;
