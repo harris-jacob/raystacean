@@ -50,7 +50,9 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
             return lit_color;
         }
 
-        dist = dist + 0.1 * result.a;
+        let step = adaptive_step(pos, result.a);
+
+        dist = dist + step;
 
         if(dist > MAX_DISTANCE) {
             break;
@@ -171,10 +173,22 @@ fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f3
     return clamp(res, 0.0, 1.0);
 }
 
-fn calc_normal(p: vec3<f32>) -> vec3<f32> {
+fn calc_derivative(p: vec3<f32>) -> vec3<f32> {
     let e: f32 = 0.001;
     let dx = map(p + vec3<f32>(e,0,0)).a - map(p - vec3<f32>(e,0,0)).a;
     let dy = map(p + vec3<f32>(0,e,0)).a - map(p - vec3<f32>(0,e,0)).a;
     let dz = map(p + vec3<f32>(0,0,e)).a - map(p - vec3<f32>(0,0,e)).a;
-    return normalize(vec3<f32>(dx, dy, dz));
+    return vec3<f32>(dx, dy, dz);
+}
+
+fn calc_normal(p: vec3<f32>) -> vec3<f32> {
+    return normalize(calc_derivative(p));
+}
+
+fn adaptive_step(p: vec3<f32>, d: f32) -> f32 {
+    let magnitude = length(calc_derivative(p)) / 0.001;
+    let non_zero = max(magnitude, 1e-5);
+    let clamped = clamp(magnitude, 0.5, 4.0);
+
+    return d / clamped;
 }
