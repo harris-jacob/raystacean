@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::camera::CameraProjection};
 
-use crate::{camera, controls, events, global_id, node_id, transform_ext::CameraViewMatrix};
+use crate::{bvh, camera, controls, events, global_id, node_id, transform_ext::CameraViewMatrix};
 
 pub struct GeometryPlugin;
 
@@ -10,7 +10,7 @@ impl Plugin for GeometryPlugin {
     }
 }
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone)]
 pub struct BoxGeometry {
     pub position: Vec3,
     pub scale: Vec3,
@@ -46,6 +46,13 @@ impl BoxGeometry {
     /// of the smallest axis.
     pub fn rounding_radius(&self) -> f32 {
         self.rounding * self.scale.x.min(self.scale.y).min(self.scale.z)
+    }
+
+    pub fn bounds(&self) -> bvh::AABB {
+        bvh::AABB {
+            min: self.position - self.scale,
+            max: self.position + self.scale,
+        }
     }
 }
 

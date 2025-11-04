@@ -19,6 +19,17 @@ struct GpuPrimative {
     logical_color: vec3<f32>,
 }
 
+struct GpuBvhNode {
+    bounds_min: vec3<f32>,
+    _pad0: u32,
+    bounds_max: vec3<f32>,
+    _pad1: u32,
+    left_index: i32,
+    right_index: i32,
+    first_prim: u32,
+    prim_count: u32,
+}
+
 @group(2) @binding(0)
 var<uniform> view_to_world: mat4x4<f32>;
 @group(2) @binding(1)
@@ -26,22 +37,49 @@ var<uniform> clip_to_view: mat4x4<f32>;
 @group(2) @binding(2)
 var<uniform> cursor_position: vec2<f32>;
 @group(2) @binding(3)
-var<storage, read> primatives: array<GpuPrimative>;
+var<storage, read> primitives: array<GpuPrimative>;
 @group(2) @binding(4)
+var<storage, read> bvh_nodes: array<GpuBvhNode>;
+@group(2) @binding(5)
+var<storage, read> bvh_prim_indices: array<u32>;
+@group(2) @binding(6)
 var<storage, read_write> selection: array<f32>;
-
 
 fn map(p: vec3<f32>) -> SdfResult {
     var sdf = SdfResult(100.0, BLACK);
 
-    for (var i = 0u; i < arrayLength(&primatives); i++) {
-        let box = primatives[i];
+    var stack: array<i32, 64>;
+    var sp = 0;
+    stack[sp] = 0;
+    sp += 1;
 
-        let color = box.logical_color;
-        let b = sd_box(p - box.position, box.scale, box.rounding, color);
-
-        sdf = min_sdf(sdf, b);
-    }
+//    while (sp > 0) {
+//        sp -= 1;
+//        let node_index = stack[sp];
+//        let node = bvh_nodes[node_index];
+//
+//        // optional early-out culling
+//        let aabb_dist = distance_to_aabb(p, node.bounds_min, node.bounds_max);
+//        if (aabb_dist > sdf.dist) { continue; }
+//
+//        // Leaf node
+//        if (node.left_index == -1) {
+//            for (var i = 0u; i < node.prim_count; i = i + 1u) {
+//                let prim_index = bvh_prim_indices[node.first_prim + i];
+//                if (prim_index >= arrayLength(&primitives)) { continue; }
+//
+//                let prim = primitives[prim_index];
+//                let b = sd_box(p - prim.position, prim.scale, prim.rounding, prim.color);
+//
+//                sdf = min_sdf(b, sdf);
+//            }
+//        } else {
+//            stack[sp] = node.left_index;
+//            sp += 1;
+//            stack[sp] = node.right_index;
+//            sp += 1;
+//        }
+//    }
 
     return sdf;
 }
@@ -105,4 +143,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(result, 1.0);
 
+}
+
+fn distance_to_aabb(p: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> f32 {
+    let d = max(bmin - p, p - bmax);
+    // clamp negative components to zero
+    let outside = max(d, vec3<f32>(0.0));
+    return length(outside);
 }

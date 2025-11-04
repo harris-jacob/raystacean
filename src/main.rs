@@ -1,3 +1,4 @@
+mod bvh;
 mod camera;
 mod controls;
 mod events;
@@ -40,6 +41,7 @@ fn main() {
         })
         .add_plugins(MeshPickingPlugin)
         .add_plugins((
+            bvh::BvhPlugin,
             camera::CameraPlugin,
             controls::ControlContextPlugin,
             geometry::GeometryPlugin,

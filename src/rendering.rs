@@ -10,7 +10,7 @@ use bevy::render::view::RenderLayers;
 use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
-use crate::events;
+use crate::{bvh, events};
 use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
@@ -22,7 +22,12 @@ impl Plugin for RenderingPlugin {
             .add_systems(Startup, setup)
             .add_systems(
                 Update,
-                (boxes_to_gpu, cursor_position, window_resize_system),
+                (
+                    bvh_to_gpu,
+                    boxes_to_gpu,
+                    cursor_position,
+                    window_resize_system,
+                ),
             );
     }
 }
@@ -59,6 +64,8 @@ fn setup(
     let image_handle = images.add(image);
 
     let primatives = buffers.add(ShaderStorageBuffer::default());
+    let bvh = buffers.add(ShaderStorageBuffer::default());
+    let prim_indices = buffers.add(ShaderStorageBuffer::default());
 
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
@@ -70,12 +77,16 @@ fn setup(
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
         primatives: primatives.clone(),
+        prim_indices: prim_indices.clone(),
+        bvh: bvh.clone(),
     });
 
     let selection_material_handle = selection_material.add(SelectionMaterial {
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
         primatives: primatives.clone(),
+        bvh: bvh.clone(),
+        prim_indices: prim_indices.clone(),
         selection: selection.clone(),
         cursor_position: Vec2::default(),
     });
@@ -91,6 +102,8 @@ fn setup(
     );
 
     commands.insert_resource(PrimativesBufferHandle(primatives));
+    commands.insert_resource(BvhBufferHandle(bvh));
+    commands.insert_resource(PrimIndicesBuffer(prim_indices));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -200,6 +213,77 @@ fn boxes_to_gpu(
     buffer.set_data(gpu_data);
 }
 
+fn bvh_to_gpu(
+    bvh: Res<bvh::BVHTree>,
+    bvh_handle: Res<BvhBufferHandle>,
+    indices_handle: Res<PrimIndicesBuffer>,
+    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+) {
+    let mut gpu_data = Vec::new();
+    let mut indices = Vec::new();
+
+    flatten_bvh(&bvh.root, &mut gpu_data, &mut indices);
+
+    let bvh_buffer = bvh_handle.get_mut(&mut buffers);
+    bvh_buffer.set_data(gpu_data);
+
+    let indices_buffer = indices_handle.get_mut(&mut buffers);
+    indices_buffer.set_data(indices);
+}
+
+fn flatten_bvh(node: &bvh::BVHNode, flat: &mut Vec<GpuBvhNode>, indices: &mut Vec<u32>) -> i32 {
+    let index = flat.len() as i32;
+
+    match node {
+        bvh::BVHNode::Leaf {
+            bounds,
+            prim_indices: local_indices,
+        } => {
+            let first_prim = indices.len() as u32;
+            let prim_count = local_indices.len() as u32;
+
+            for &idx in local_indices {
+                indices.push(idx as u32);
+            }
+
+            flat.push(GpuBvhNode {
+                bounds_min: [bounds.min.x, bounds.min.y, bounds.min.z],
+                bounds_max: [bounds.max.x, bounds.max.y, bounds.max.z],
+                left_index: -1,
+                right_index: -1,
+                first_prim,
+                prim_count,
+                ..default()
+            });
+        }
+        bvh::BVHNode::Internal {
+            bounds,
+            left,
+            right,
+        } => {
+            // Placeholder node
+            flat.push(GpuBvhNode {
+                bounds_min: [bounds.min.x, bounds.min.y, bounds.min.z],
+                bounds_max: [bounds.max.x, bounds.max.y, bounds.max.z],
+                left_index: -1,
+                right_index: -1,
+                first_prim: 0,
+                prim_count: 0,
+                ..default()
+            });
+
+            let left_index = flatten_bvh(left, flat, indices);
+            let right_index = flatten_bvh(right, flat, indices);
+
+            // Update the parent node now that we know child indices
+            flat[index as usize].left_index = left_index;
+            flat[index as usize].right_index = right_index;
+        }
+    }
+
+    index
+}
+
 fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SelectionMaterial>>) {
     let window = windows.single().expect("single");
 
@@ -217,7 +301,20 @@ fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<Selecti
 }
 
 #[repr(C)]
-#[derive(Clone, ShaderType, Default)]
+#[derive(Clone, Copy, Debug, ShaderType, Default)]
+struct GpuBvhNode {
+    bounds_min: [f32; 3],
+    _pad0: f32, // pad to 16 bytes
+    bounds_max: [f32; 3],
+    _pad1: f32, // pad to 16 bytes
+    left_index: i32,
+    right_index: i32,
+    first_prim: u32,
+    prim_count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, ShaderType, Default, Debug)]
 pub struct GpuPrimative {
     pub position: [f32; 3],
     pub is_subtract: u32,
@@ -242,7 +339,11 @@ pub struct SelectionMaterial {
     pub cursor_position: Vec2,
     #[storage(3, read_only)]
     pub primatives: Handle<ShaderStorageBuffer>,
-    #[storage(4)]
+    #[storage(4, read_only)]
+    pub bvh: Handle<ShaderStorageBuffer>,
+    #[storage(5, read_only)]
+    pub prim_indices: Handle<ShaderStorageBuffer>,
+    #[storage(6)]
     pub selection: Handle<ShaderStorageBuffer>,
 }
 
@@ -256,12 +357,44 @@ pub struct LitMaterial {
     pub clip_to_view: Mat4,
     #[storage(2, read_only)]
     pub primatives: Handle<ShaderStorageBuffer>,
+    #[storage(3, read_only)]
+    pub bvh: Handle<ShaderStorageBuffer>,
+    #[storage(4, read_only)]
+    pub prim_indices: Handle<ShaderStorageBuffer>,
 }
 
 #[derive(Resource)]
 pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
 
+#[derive(Resource)]
+pub struct BvhBufferHandle(Handle<ShaderStorageBuffer>);
+
+#[derive(Resource)]
+pub struct PrimIndicesBuffer(Handle<ShaderStorageBuffer>);
+
 impl PrimativesBufferHandle {
+    pub fn get_mut<'a>(
+        &self,
+        assets: &'a mut Assets<ShaderStorageBuffer>,
+    ) -> &'a mut ShaderStorageBuffer {
+        assets
+            .get_mut(&self.0)
+            .expect("ShaderStorageBuffer should exist")
+    }
+}
+
+impl BvhBufferHandle {
+    pub fn get_mut<'a>(
+        &self,
+        assets: &'a mut Assets<ShaderStorageBuffer>,
+    ) -> &'a mut ShaderStorageBuffer {
+        assets
+            .get_mut(&self.0)
+            .expect("ShaderStorageBuffer should exist")
+    }
+}
+
+impl PrimIndicesBuffer {
     pub fn get_mut<'a>(
         &self,
         assets: &'a mut Assets<ShaderStorageBuffer>,

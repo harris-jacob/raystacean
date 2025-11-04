@@ -3,8 +3,8 @@
 #import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, min_sdf, max_sdf, SdfResult}
 
 const MAX_STEPS: i32 = 100;
-const HIT_THRESHOLD: f32 = 0.001;
-const MAX_DISTANCE: f32 = 200.0;
+const HIT_THRESHOLD: f32 = 0.01;
+const MAX_DISTANCE: f32 = 100.0;
 
 const BLACK: vec3<f32> = vec3(0.0, 0.0, 0.0);
 
@@ -18,12 +18,27 @@ struct GpuPrimative {
     logical_color: vec3<f32>,
 }
 
+struct GpuBvhNode {
+    bounds_min: vec3<f32>,
+    _pad0: u32,
+    bounds_max: vec3<f32>,
+    _pad1: u32,
+    left_index: i32,
+    right_index: i32,
+    first_prim: u32,
+    prim_count: u32,
+}
+
 @group(2) @binding(0)
 var<uniform> view_to_world: mat4x4<f32>;
 @group(2) @binding(1)
 var<uniform> clip_to_view: mat4x4<f32>;
 @group(2) @binding(2)
-var<storage, read> primatives: array<GpuPrimative>;
+var<storage, read> primitives: array<GpuPrimative>;
+@group(2) @binding(3)
+var<storage, read> bvh_nodes: array<GpuBvhNode>;
+@group(2) @binding(4)
+var<storage, read> bvh_prim_indices: array<u32>;
 
 fn sky_color(rd: vec3<f32>) -> vec3<f32> {
     let t = clamp(0.5 + 0.5 * rd.y, 0.0, 1.0);
@@ -32,27 +47,53 @@ fn sky_color(rd: vec3<f32>) -> vec3<f32> {
     return mix(horizon, zenith, t);
 }
 
+// fn map(p: vec3<f32>) -> SdfResult {
+//    return SdfResult(100.0, BLACK);
+// }
+
 fn map(p: vec3<f32>) -> SdfResult {
-    var sdf = SdfResult(100.0, BLACK);
-
-    for (var i = 0u; i < arrayLength(&primatives); i++) {
-        let box = primatives[i];
-
-        let color = box.color;
-        let b = sd_box(p - box.position, box.scale, box.rounding, color);
-
-        if (box.is_subtract == 1u) {
-            sdf.dist = op_smooth_subtract(b.dist, sdf.dist, box.blend);
-        } else {
-            sdf = sd_smooth_union(sdf, b, box.blend);
-        }
-        
-    }
-
-    sdf = min_sdf(sdf, sd_ground(p));
-
-    return sdf;
-}
+     var sdf = SdfResult(100.0, BLACK);
+ 
+     var stack: array<i32, 64>;
+     var sp = 0;
+     stack[sp] = 0;
+     sp += 1;
+ 
+     while (sp > 0) {
+         sp -= 1;
+         let node_index = stack[sp];
+         let node = bvh_nodes[node_index];
+ 
+         // optional early-out culling
+         let aabb_dist = distance_to_aabb(p, node.bounds_min, node.bounds_max);
+         if (aabb_dist > sdf.dist) { continue; }
+ 
+         // Leaf node
+         if (node.left_index == -1) {
+             for (var i = 0u; i < node.prim_count; i = i + 1u) {
+                 let prim_index = bvh_prim_indices[node.first_prim + i];
+                 if (prim_index >= arrayLength(&primitives)) { continue; }
+ 
+                 let prim = primitives[prim_index];
+                 let b = sd_box(p - prim.position, prim.scale, prim.rounding, prim.color);
+ 
+                 if (prim.is_subtract == 1u) {
+                     sdf.dist = op_smooth_subtract(b.dist, sdf.dist, prim.blend);
+                 } else {
+                     sdf = sd_smooth_union(sdf, b, prim.blend);
+                 }
+             }
+         } else {
+             stack[sp] = node.left_index;
+             sp += 1;
+             stack[sp] = node.right_index;
+             sp += 1;
+         }
+     }
+ 
+     sdf = min_sdf(sdf, sd_ground(p));
+     return sdf;
+ }
 
 fn sd_ground(p: vec3<f32>) -> SdfResult {
   return SdfResult(p.y, grid_color(p));
@@ -218,7 +259,7 @@ fn calc_lighting(pos: vec3<f32>, in: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f
 fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f32 {
     var t: f32 = min_dist;
     var res: f32 = 1.0;
-    for (var i: i32 = 0; i < 32; i = i + 1) {
+    for (var i: i32 = 0; i < 20; i = i + 1) {
         let h = map(ro + rd * t).dist;
         if (h < 0.001) {
             return 0.0;
@@ -236,4 +277,12 @@ fn calc_normal(p: vec3<f32>) -> vec3<f32> {
     let dy = map(p + vec3<f32>(0,e,0)).dist - map(p - vec3<f32>(0,e,0)).dist;
     let dz = map(p + vec3<f32>(0,0,e)).dist - map(p - vec3<f32>(0,0,e)).dist;
     return normalize(vec3<f32>(dx, dy, dz));
+}
+
+
+fn distance_to_aabb(p: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> f32 {
+    let d = max(bmin - p, p - bmax);
+    // clamp negative components to zero
+    let outside = max(d, vec3<f32>(0.0));
+    return length(outside);
 }
