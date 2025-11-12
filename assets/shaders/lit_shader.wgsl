@@ -2,7 +2,7 @@
 
 #import "./shaders/sdf.wgsl"::{sd_sphere, sd_box, min_sdf, max_sdf, SdfResult}
 
-const MAX_STEPS: i32 = 100;
+const MAX_STEPS: i32 = 64;
 const HIT_THRESHOLD: f32 = 0.01;
 const MAX_DISTANCE: f32 = 100.0;
 
@@ -51,10 +51,16 @@ fn sky_color(rd: vec3<f32>) -> vec3<f32> {
 //    return SdfResult(100.0, BLACK);
 // }
 
-fn map(p: vec3<f32>) -> SdfResult {
+struct MapResult {
+    sdf: SdfResult,
+    prims_evaluated: f32,
+}
+
+fn map(p: vec3<f32>) -> MapResult {
      var sdf = SdfResult(100.0, BLACK);
+     var prims_evaluated = 0.0;
  
-     var stack: array<i32, 64>;
+     var stack: array<i32, 20>;
      var sp = 0;
      stack[sp] = 0;
      sp += 1;
@@ -76,6 +82,7 @@ fn map(p: vec3<f32>) -> SdfResult {
  
                  let prim = primitives[prim_index];
                  let b = sd_box(p - prim.position, prim.scale, prim.rounding, prim.color);
+                 prims_evaluated += 1.0;
  
                  if (prim.is_subtract == 1u) {
                      sdf.dist = op_smooth_subtract(b.dist, sdf.dist, prim.blend);
@@ -91,8 +98,8 @@ fn map(p: vec3<f32>) -> SdfResult {
          }
      }
  
-     sdf = min_sdf(sdf, sd_ground(p));
-     return sdf;
+     // sdf = min_sdf(sdf, sd_ground(p));
+     return MapResult(sdf, prims_evaluated);
  }
 
 fn sd_ground(p: vec3<f32>) -> SdfResult {
@@ -155,8 +162,9 @@ fn sd_smooth_union(s1: SdfResult, s2: SdfResult, k: f32) -> SdfResult {
 
 // Lighting method based on Inigo Quilez' raymarching - primatives demo
 // https://www.shadertoy.com/view/Xds3zN
-fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
+fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> f32 {
     var dist = 0.0;
+    var prims = 0.0;
 
 
     for (var i = 0; i < MAX_STEPS; i++) {
@@ -164,25 +172,26 @@ fn ray_march(camera_origin: vec3<f32>, camera_dir: vec3<f32>) -> vec3<f32> {
         let result = map(pos);
 
         // Hit something
-        if(result.dist < HIT_THRESHOLD) {
+        if(result.sdf.dist < HIT_THRESHOLD) {
 
-            let lit_color = calc_lighting(pos, result.color, camera_dir);
+            let lit_color = calc_lighting(pos, result.sdf.color, camera_dir);
             
-            return lit_color;
+            return result.prims_evaluated;
         }
 
-        dist = dist + result.dist;
+        dist = dist + result.sdf.dist;
 
-        if(result.dist > MAX_DISTANCE) {
-            break;
+        if(dist > MAX_DISTANCE) {
+            return result.prims_evaluated;
         }
+
+        prims = result.prims_evaluated;
     }
 
 
     // Sky color
-    return sky_color(camera_dir);
+    return prims;
 }
-
 
 
 @fragment
@@ -208,8 +217,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 5. March in world space
     let result = ray_march(ray_origin_world, ray_dir_world);
+    let t = clamp(result / f32(arrayLength(&primitives)), 0.0, 1.0);
+    let heat_color = vec3<f32>(t, 0.0, 1.0 - t);
 
-    return vec4<f32>(result, 1.0);
+    return vec4<f32>(heat_color, 1.0);
 
 }
 
@@ -260,7 +271,7 @@ fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f3
     var t: f32 = min_dist;
     var res: f32 = 1.0;
     for (var i: i32 = 0; i < 20; i = i + 1) {
-        let h = map(ro + rd * t).dist;
+        let h = map(ro + rd * t).sdf.dist;
         if (h < 0.001) {
             return 0.0;
         }
@@ -273,9 +284,9 @@ fn soft_shadow(ro: vec3<f32>, rd: vec3<f32>, min_dist: f32, max_dist: f32) -> f3
 
 fn calc_normal(p: vec3<f32>) -> vec3<f32> {
     let e: f32 = 0.001;
-    let dx = map(p + vec3<f32>(e,0,0)).dist - map(p - vec3<f32>(e,0,0)).dist;
-    let dy = map(p + vec3<f32>(0,e,0)).dist - map(p - vec3<f32>(0,e,0)).dist;
-    let dz = map(p + vec3<f32>(0,0,e)).dist - map(p - vec3<f32>(0,0,e)).dist;
+    let dx = map(p + vec3<f32>(e,0,0)).sdf.dist - map(p - vec3<f32>(e,0,0)).sdf.dist;
+    let dy = map(p + vec3<f32>(0,e,0)).sdf.dist - map(p - vec3<f32>(0,e,0)).sdf.dist;
+    let dz = map(p + vec3<f32>(0,0,e)).sdf.dist - map(p - vec3<f32>(0,0,e)).sdf.dist;
     return normalize(vec3<f32>(dx, dy, dz));
 }
 
