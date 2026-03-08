@@ -1,29 +1,26 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
+use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
-use bevy::render::render_resource::{
-    AsBindGroup, BufferUsages, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
-    TextureUsages,
-};
+use bevy::render::render_resource::*;
 use bevy::render::storage::ShaderStorageBuffer;
 use bevy::render::view::RenderLayers;
 use bevy::window::WindowResized;
 
 use crate::layers::SHADER_CAMERA;
-use crate::events;
+use crate::{events, world};
 use crate::{geometry, layers};
 
 pub struct RenderingPlugin;
 
 impl Plugin for RenderingPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(ExtractResourcePlugin::<WorldSpaceTextureHandle>::default());
+
         app.add_plugins(MaterialPlugin::<LitMaterial>::default())
             .add_plugins(MaterialPlugin::<SelectionMaterial>::default())
             .add_systems(Startup, setup)
-            .add_systems(
-                Update,
-                (boxes_to_gpu, cursor_position, window_resize_system),
-            );
+            .add_systems(Update, (cursor_position, window_resize_system));
     }
 }
 
@@ -53,12 +50,31 @@ fn setup(
         RenderAssetUsages::default(),
     );
 
+    image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
+        | TextureUsages::COPY_DST
+        | TextureUsages::STORAGE_BINDING
+        | TextureUsages::RENDER_ATTACHMENT;
+
+    let color_pick_texture = images.add(image);
+
+    let mut image = Image::new_fill(
+        Extent3d {
+            width: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
+            height: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
+            depth_or_array_layers: world::RESOLUTION * world::CHUNKS_PER_AXIS as u32,
+        },
+        TextureDimension::D3,
+        &[0u8; 16],
+        TextureFormat::Rgba32Float,
+        RenderAssetUsages::default(),
+    );
+
     image.texture_descriptor.usage =
-        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING;
 
-    let image_handle = images.add(image);
+    let world_space_texture = images.add(image);
 
-    let primatives = buffers.add(ShaderStorageBuffer::default());
+    commands.insert_resource(WorldSpaceTextureHandle(world_space_texture.clone()));
 
     let selection_buffer = vec![0.0; 3];
     let mut selection_buffer = ShaderStorageBuffer::from(selection_buffer);
@@ -69,16 +85,16 @@ fn setup(
     let lit_material_handle = lit_material.add(LitMaterial {
         view_to_world: Mat4::default(),
         clip_to_view: Mat4::default(),
-        primatives: primatives.clone(),
+        voxel_texture: world_space_texture,
     });
 
-    let selection_material_handle = selection_material.add(SelectionMaterial {
-        view_to_world: Mat4::default(),
-        clip_to_view: Mat4::default(),
-        primatives: primatives.clone(),
-        selection: selection.clone(),
-        cursor_position: Vec2::default(),
-    });
+//     let selection_material_handle = selection_material.add(SelectionMaterial {
+//         view_to_world: Mat4::default(),
+//         clip_to_view: Mat4::default(),
+//         // primatives: primatives.clone(),
+//         selection: selection.clone(),
+//         cursor_position: Vec2::default(),
+//     });
 
     commands.spawn(Readback::buffer(selection)).observe(
         |trigger: Trigger<ReadbackComplete>, mut ev: EventWriter<events::PixelColorUnderCursor>| {
@@ -89,8 +105,6 @@ fn setup(
             )));
         },
     );
-
-    commands.insert_resource(PrimativesBufferHandle(primatives));
 
     let mesh = meshes.add(Mesh::from(Plane3d::new(
         Vec3::Z,
@@ -127,7 +141,7 @@ fn setup(
         .spawn((
             RenderingPlane,
             Mesh3d(mesh),
-            MeshMaterial3d(selection_material_handle),
+            // MeshMaterial3d(selection_material_handle),
             RenderLayers::layer(layers::SELECTION_LAYER),
         ))
         .observe(output_click_event);
@@ -136,7 +150,7 @@ fn setup(
         Camera3d::default(),
         Camera {
             order: layers::SELECTION_CAMERA,
-            target: image_handle.clone().into(),
+            target: color_pick_texture.clone().into(),
             clear_color: Color::WHITE.into(),
             ..default()
         },
@@ -174,32 +188,6 @@ fn output_click_event(trigger: Trigger<Pointer<Click>>, mut commands: Commands) 
     commands.trigger(events::PlaneClicked);
 }
 
-fn boxes_to_gpu(
-    boxes: Query<&geometry::BoxGeometry>,
-    buffer_handle: Res<PrimativesBufferHandle>,
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
-) {
-    let buffer = buffer_handle.get_mut(&mut buffers);
-
-    let gpu_data: Vec<GpuPrimative> = boxes
-        .iter()
-        // Sorted by ID to ensure stable operation ordering seen by the shader
-        .sort_by::<&geometry::BoxGeometry>(|a, b| a.id.cmp(&b.id))
-        .map(|b| GpuPrimative {
-            position: b.position.into(),
-            scale: b.scale.into(),
-            color: b.color,
-            blend: b.blend,
-            rounding_radius: b.rounding_radius(),
-            logical_color: b.id.to_color(),
-            is_subtract: if b.is_subtract { 1 } else { 0 },
-            ..default()
-        })
-        .collect();
-
-    buffer.set_data(gpu_data);
-}
-
 fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<SelectionMaterial>>) {
     let window = windows.single().expect("single");
 
@@ -214,19 +202,6 @@ fn cursor_position(windows: Query<&Window>, mut materials: ResMut<Assets<Selecti
             (cursor_pos.y / window.height() * 2.0) - 1.0,
         );
     }
-}
-
-#[repr(C)]
-#[derive(Clone, ShaderType, Default)]
-pub struct GpuPrimative {
-    pub position: [f32; 3],
-    pub is_subtract: u32,
-    pub scale: [f32; 3],
-    pub blend: f32,
-    pub color: [f32; 3],
-    pub rounding_radius: f32,
-    pub logical_color: [f32; 3],
-    _pad1: f32,
 }
 
 /// Material linked to shader that displays only primative shapes, rendering
@@ -254,23 +229,13 @@ pub struct LitMaterial {
     pub view_to_world: Mat4,
     #[uniform(1)]
     pub clip_to_view: Mat4,
-    #[storage(2, read_only)]
-    pub primatives: Handle<ShaderStorageBuffer>,
+    #[texture(2, dimension = "3d")]
+    #[sampler(3)]
+    pub voxel_texture: Handle<Image>,
 }
 
-#[derive(Resource)]
-pub struct PrimativesBufferHandle(Handle<ShaderStorageBuffer>);
-
-impl PrimativesBufferHandle {
-    pub fn get_mut<'a>(
-        &self,
-        assets: &'a mut Assets<ShaderStorageBuffer>,
-    ) -> &'a mut ShaderStorageBuffer {
-        assets
-            .get_mut(&self.0)
-            .expect("ShaderStorageBuffer should exist")
-    }
-}
+#[derive(Resource, ExtractResource, Clone)]
+pub struct WorldSpaceTextureHandle(pub Handle<Image>);
 
 impl Material for SelectionMaterial {
     fn fragment_shader() -> ShaderRef {

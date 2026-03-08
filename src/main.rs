@@ -11,13 +11,14 @@ mod rendering;
 mod selection;
 mod transform_ext;
 mod ui;
+mod world;
+mod chunk_compute;
 
 use std::path::PathBuf;
 
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 
-#[cfg_attr(feature = "hotpath", hotpath::main(percentiles = [99]))]
 fn main() {
     let asset_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("assets")
@@ -41,6 +42,7 @@ fn main() {
         .add_plugins(MeshPickingPlugin)
         .add_plugins((
             camera::CameraPlugin,
+            chunk_compute::ChunkComputePlugin,
             controls::ControlContextPlugin,
             geometry::GeometryPlugin,
             gizmos::GizmosPlugin,
@@ -49,6 +51,7 @@ fn main() {
             rendering::RenderingPlugin,
             selection::SelectionPlugin,
             ui::UiPlugin,
+            world::WorldPlugin,
         ))
         .run();
 }
